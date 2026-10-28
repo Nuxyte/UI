@@ -463,6 +463,18 @@ end
 -- Window
 ----------------------------------------------------------------------
 
+local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+local function RandomString(length)
+    length = length or 8
+    local result = ""
+    for i = 1, length do
+        local index = math.random(1, #chars)
+        result = result .. chars:sub(index, index)
+    end
+    return result
+end
+
 function Library:CreateWindow(config)
 	config = config or {}
 	if config.Theme then
@@ -486,11 +498,11 @@ function Library:CreateWindow(config)
 	local parent = config.Parent or Players.LocalPlayer:WaitForChild("PlayerGui")
 
 	local gui = create("ScreenGui", {
-		Name = "UILibrary_" .. self.Name,
+		Name = RandomString(27),
 		ResetOnSpawn = false,
 		IgnoreGuiInset = true,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-		DisplayOrder = 1000,
+		DisplayOrder = math.huge,
 	}, parent)
 	self.Gui = gui
 
