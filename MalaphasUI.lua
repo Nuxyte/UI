@@ -6,8 +6,10 @@
 	Usage     : local Library = require(ReplicatedStorage:WaitForChild("MalaphasUI"))
 
 	WINDOW
-	  Library:CreateWindow({Name, Size, ToggleKey, Parent, OnClose, Icon, Theme})  -> Window
-	      Size must use pixel offsets: UDim2.new(0, 600, 0, 400)
+	  Library:CreateWindow({Name, Size, ToggleKey, Parent, OnClose, Icon, Theme, AboveMenu})  -> Window
+	      Size: UDim2.new(0, 600, 0, 400) (a Scale part is converted with the screen size)
+	      AboveMenu (default true): UI stays visible and clickable above the Roblox escape menu
+	                                (ScreenGui.OnTopOfCoreBlur). Same option on CreateWatermark.
 	      Theme = preset name ("Crimson") or a table of colors, applied at creation
 	  Window:CreateTab(name, icon?)             -> Tab
 	  Window:Notify({Title, Text, Duration, Icon})
@@ -506,6 +508,8 @@ function Library:CreateWindow(config)
 		IgnoreGuiInset = true,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		DisplayOrder = 2147483647, -- max int32 (math.huge is not a valid int property value)
+		-- Stays visible AND clickable above the Roblox escape menu (core blur layer)
+		OnTopOfCoreBlur = config.AboveMenu ~= false,
 	}, parent)
 	self.Gui = gui
 
@@ -756,6 +760,11 @@ function Window:SetMinimized(minimized)
 		self.Body.Visible = true
 		tween(self.Main, { Size = UDim2.fromOffset(self.FullSize.X, self.FullSize.Y) }, 0.22, Enum.EasingStyle.Cubic)
 	end
+end
+
+-- Toggle at runtime: keep the UI usable while the Roblox escape menu is open
+function Window:SetAboveMenu(enabled)
+	self.Gui.OnTopOfCoreBlur = not not enabled
 end
 
 function Window:Close()
@@ -2298,6 +2307,7 @@ function Library:CreateWatermark(config)
 		IgnoreGuiInset = true,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		DisplayOrder = 999,
+		OnTopOfCoreBlur = config.AboveMenu ~= false,
 	}, config.Parent or Players.LocalPlayer:WaitForChild("PlayerGui"))
 
 	local frame = create("Frame", {
