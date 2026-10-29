@@ -1,6 +1,6 @@
 --!nonstrict
 --[[
-	MalaphasUI v4 - dark utility-style Roblox UI library (Luau).
+	MalaphasUI v4.1 - dark utility-style Roblox UI library (Luau).
 
 	Placement : ModuleScript named "MalaphasUI" in ReplicatedStorage.
 	Usage     : local Library = require(ReplicatedStorage:WaitForChild("MalaphasUI"))
@@ -173,8 +173,10 @@ local COLOR_PROPS = {
 }
 
 local bindings = {}
-local pruneAt = 2000
 
+-- Drops bindings of destroyed instances. Only called from refreshTheme / Window:Destroy:
+-- an instance being created is not parented yet, so pruning inside bind() would
+-- wrongly discard it (it would then never follow theme changes).
 local function prune()
 	local alive = {}
 	for _, b in ipairs(bindings) do
@@ -183,7 +185,6 @@ local function prune()
 		end
 	end
 	bindings = alive
-	pruneAt = #bindings * 2 + 1000
 end
 
 -- source = theme key (string) or function returning a Color3
@@ -196,20 +197,13 @@ local function bind(inst, prop, source)
 	end
 	inst[prop] = fn()
 	table.insert(bindings, { inst = inst, prop = prop, fn = fn })
-	if #bindings > pruneAt then
-		prune()
-	end
 end
 
 local function refreshTheme()
-	local alive = {}
+	prune()
 	for _, b in ipairs(bindings) do
-		if b.inst:IsDescendantOf(game) then
-			b.inst[b.prop] = b.fn()
-			table.insert(alive, b)
-		end
+		b.inst[b.prop] = b.fn()
 	end
-	bindings = alive
 end
 
 function Library:SetTheme(theme)
@@ -493,7 +487,16 @@ function Library:CreateWindow(config)
 	self._notifyOrder = 0
 
 	local size = config.Size or UDim2.fromOffset(600, 400)
-	local px = Vector2.new(size.X.Offset, size.Y.Offset)
+	-- Pixel size (a Scale component is converted using the camera viewport)
+	local viewport = Vector2.new(1280, 720)
+	local camera = workspace.CurrentCamera
+	if camera then
+		viewport = camera.ViewportSize
+	end
+	local px = Vector2.new(
+		math.max(size.X.Offset + size.X.Scale * viewport.X, 320),
+		math.max(size.Y.Offset + size.Y.Scale * viewport.Y, 200)
+	)
 	self.FullSize = px
 	local parent = config.Parent or Players.LocalPlayer:WaitForChild("PlayerGui")
 
@@ -502,7 +505,7 @@ function Library:CreateWindow(config)
 		ResetOnSpawn = false,
 		IgnoreGuiInset = true,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-		DisplayOrder = math.huge,
+		DisplayOrder = 2147483647, -- max int32 (math.huge is not a valid int property value)
 	}, parent)
 	self.Gui = gui
 
@@ -608,7 +611,9 @@ function Library:CreateWindow(config)
 	-- Double-click the title bar = minimize / restore
 	local lastClick = 0
 	header.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		-- ignore clicks on the "-" / "X" buttons (the right 62px of the title bar)
+		local rightEdge = header.AbsolutePosition.X + header.AbsoluteSize.X
+		if input.UserInputType == Enum.UserInputType.MouseButton1 and input.Position.X < rightEdge - 62 then
 			local now = os.clock()
 			if now - lastClick < 0.3 then
 				lastClick = 0
@@ -1525,11 +1530,14 @@ end
 
 function Groupbox:AddLabel(text)
 	local row = self:_Row(16)
+	row.AutomaticSize = Enum.AutomaticSize.Y -- long labels wrap instead of overlapping the next row
 	local label = create("TextLabel", {
-		Size = UDim2.fromScale(1, 1),
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		Text = text or "",
 		TextColor3 = "SubText",
 		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
 		TextWrapped = true,
 	}, row)
 	self:_Register(text or "", row)
@@ -1773,7 +1781,9 @@ function Groupbox:AddSlider(o)
 
 	local function snap(v)
 		v = math.clamp(v, min, max)
-		v = min + math.floor((v - min) / inc + 0.5) * inc
+		if inc > 0 then
+			v = min + math.floor((v - min) / inc + 0.5) * inc
+		end
 		v = math.clamp(v, min, max)
 		return tonumber(string.format("%." .. decimals .. "f", v))
 	end
@@ -2151,7 +2161,11 @@ function Groupbox:AddTextbox(o)
 		end
 	end)
 
-	textbox:Set(o.Default or "", true)
+	local initial = o.Default or ""
+	if o.Numeric then
+		initial = tonumber(initial) or 0
+	end
+	textbox:Set(initial, true)
 	register(o.Flag, textbox)
 	self:_Register(name, row)
 	return textbox
