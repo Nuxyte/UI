@@ -1,45 +1,68 @@
 --!nonstrict
 --[[
-	MalaphasUI v4.1 - dark utility-style Roblox UI library (Luau).
+	MalaphasUI v4.2 - dark utility-style Roblox UI library (Luau).
 
 	Placement : ModuleScript named "MalaphasUI" in ReplicatedStorage.
 	Usage     : local Library = require(ReplicatedStorage:WaitForChild("MalaphasUI"))
 
 	WINDOW
-	  Library:CreateWindow({Name, Size, ToggleKey, Parent, OnClose, Icon, Theme, AboveMenu})  -> Window
+	  Library:CreateWindow({Name, Size, ToggleKey, Parent, OnClose, Icon, Theme, AboveMenu, MaxVisible})  -> Window
+	      MaxVisible (default 5): max notifications on screen; beyond that the oldest fades out early
+	                              (also readable / writable as Window.MaxVisible)
+	      The window auto-scales down (never up) to fit small screens and re-clamps itself on-screen
+	      whenever the camera viewport changes.
 	      Size: UDim2.new(0, 600, 0, 400) (a Scale part is converted with the screen size)
 	      AboveMenu (default true): UI stays visible and clickable above the Roblox escape menu
 	                                (ScreenGui.OnTopOfCoreBlur). Same option on CreateWatermark.
 	      Theme = preset name ("Crimson") or a table of colors, applied at creation
-	  Window:CreateTab(name, icon?)             -> Tab
+	  Window:CreateTab(name, icon?, opts?)      -> Tab
+	      opts = { categoriesOnly = true }: no implicit "Main" page; use :CreateCategory only
+	      (calling :CreateSection on such a tab warns and returns nil)
 	  Window:Notify({Title, Text, Duration, Icon})
+	  Window:SetAboveMenu(bool)                 -- stay visible / clickable above the Roblox escape menu
 	  Window:SetMinimized(bool)                 -- collapse to the title bar ("-" button / double-click title)
 	  Window:SetVisible(bool)                   -- full hide (ToggleKey)
 	  Window:Close() / Window:Destroy()
 
 	TABS & CATEGORIES
-	  Tab:CreateSection(name, side, icon?)      -- side = "Left" | "Right"; goes in an implicit "Main" page
-	  Tab:CreateCategory(name, icon?)           -> Category (sub-page of the tab, shown in a small bar)
-	  Category:CreateSection(name, side, icon?) -> Groupbox
+	  Tab:CreateSection(name, side, icon?, order?)      -- side = "Left" | "Right"; goes in an implicit "Main" page
+	  Tab:CreateCategory(name, icon?, order?)           -> Category (sub-page of the tab, shown in a scrollable bar)
+	  Category:CreateSection(name, side, icon?, order?) -> Groupbox
+	      order (optional) = LayoutOrder of the section / category button (default: creation order)
 
 	ELEMENTS (Groupbox)
 	  AddToggle({Name, Default, Icon, Flag, Callback})
-	      toggle:AddColorPicker({Default, Flag, Callback})   -- swatch on the same row
+	      toggle:AddColorPicker({Default, Flag, Callback})   -- swatch on the same row (opts table is never mutated)
 	  AddSlider({Name, Min, Max, Default, Increment, Suffix, Flag, Callback})
-	  AddDropdown({Name, Options, Default, Multi, Flag, Callback})
+	      slider:SetMin(n) / slider:SetMax(n)    -- change the range, re-snaps the current value
+	      double-click the value to type a number (invalid input flashes the border red)
+	  AddDropdown({Name, Options, Default, Multi, Searchable, Flag, Callback})
+	      Searchable = true adds a live filter box inside the popup
+	      dropdown:Refresh(newOptions, keepValue) -> table of dropped values (previous selection not in newOptions)
 	  AddButton({Name, Icon, Callback})
+	      button:SetText(t) / :SetIcon(icon) / :SetVisible(bool) / :SetEnabled(bool)
 	  AddColorPicker({Name, Default, Flag, Callback})
-	  AddTextbox({Name, Default, Placeholder, Numeric, ClearTextOnFocus, Flag, Callback})
+	  AddTextbox({Name, Default, Placeholder, Numeric, MultiLine, ClearTextOnFocus, Flag, Callback})
+	      MultiLine = true: wrapped, 48px tall, text aligned to the top
 	  AddKeybind({Name, Default, Mode, Flag, Callback, OnChanged})   Mode = "Press" | "Toggle" | "Hold"
-	  AddLabel(text)
-	  AddDivider(text?)
-	  AddImage({Image, Height, ScaleType, Rounded, Border, Color, Callback})   -> {Set, Get}
+	      right-click the key box -> "Unbind"
+	  AddLabel(text)                            -> {SetText, SetColor(color | themeKey | nil), SetVisible, Destroy}
+	  AddDivider(text?)                         -> {Frame, SetVisible, Destroy}
+	  AddImage({Image, Height, ScaleType, Rounded, Border, Color, Callback})
+	      -> {Set, Get, SetVisible(bool), SetOpacity(0..1), Destroy}
 	  AddThemeEditor({Keys})                    -- preset dropdown + one color picker per theme color
+	                                               (flags are namespaced per editor: "theme_<id>_<Key>")
+
+	  Every element returned by the Add* functions has :Destroy() (idempotent: removes the row, the
+	  Library.Flags / Library.Options entries and its input connections).
 
 	THEMING (live, everything updates instantly)
 	  Library:SetTheme("Crimson")               -- preset: Default, Crimson, Ocean, Violet, Emerald, Amber, Light
 	  Library:SetTheme({Accent = Color3.fromRGB(255, 80, 80), Background = ...})
 	  Library:GetTheme()
+	  Library:RegisterPreset("Name", { Accent = ..., ... })   -- custom preset (missing keys come from Default);
+	                                                             listed by every AddThemeEditor
+	  (in Studio, SetTheme warns about unknown keys in a table)
 	  Theme keys: Background, Panel, PanelHeader, Element, ElementHover, ElementPress,
 	              Border, BorderHover, Track, Text, SubText, Accent, Danger
 
@@ -49,12 +72,16 @@
 	  Monochrome icons are tinted with the theme (follow active / inactive state). Use Tint = false for
 	  full-color images, or Color = Color3 for a fixed color.
 	  Library:RegisterIcon("settings", 123456) / Library:RegisterIcons({ settings = 123456, ... })
-	  Library:GetAvatar(userId)                 -- yields; returns an image usable with AddImage
+	  Library:GetAvatar(userId)                 -- yields; returns (image, nil) or (nil, errorMessage)
 
 	EXTRAS
-	  Library:CreateWatermark({Name, Position})  -> {SetText, SetVisible, Destroy}
+	  Library:CreateWatermark({Name, Position, AboveMenu})  -> {SetText, SetVisible, Destroy}
+	  Library:GetWindow(name)                   -> first window whose Name == name, or nil
 	  Library:ExportConfig()  -> JSON string of every Flag (theme colors included if you use AddThemeEditor)
-	  Library:ImportConfig(json) -> boolean
+	  Library:ImportConfig(json) -> true | (false, reason)
+	      every value is type-checked against its element (boolean / number / string|list / Color3 / KeyCode|nil);
+	      invalid or unknown entries are skipped silently; returns false only if the JSON is malformed
+	      or nothing at all could be applied
 
 	Every element has :Set(value, silent) and :Get().
 	Library.Flags[flag]   -> current value
@@ -218,13 +245,49 @@ function Library:SetTheme(theme)
 	if type(theme) ~= "table" then
 		return false
 	end
+	local studio = RunService:IsStudio()
 	for k, v in pairs(theme) do
 		if typeof(v) == "Color3" and typeof(T[k]) == "Color3" then
 			T[k] = v
+		elseif studio and Library.Presets.Default[k] == nil and k ~= "Font" and k ~= "FontMedium" and k ~= "TextSize" then
+			-- Studio-only hint: behavior is unchanged (unknown keys are still ignored)
+			warn("[MalaphasUI] SetTheme: unknown theme key '" .. tostring(k) .. "'")
 		end
 	end
 	refreshTheme()
 	return true
+end
+
+-- Adds a custom preset. Missing keys fall back to Default so a partial preset never leaves holes.
+-- AddThemeEditor dropdowns share Library.PresetOrder, so the new preset shows up in them too.
+function Library:RegisterPreset(name, theme)
+	if type(name) ~= "string" or name == "" or type(theme) ~= "table" then
+		return false
+	end
+	local preset = {}
+	for k, v in pairs(Library.Presets.Default) do
+		preset[k] = v
+	end
+	for k, v in pairs(theme) do
+		if typeof(v) == "Color3" and preset[k] ~= nil then
+			preset[k] = v
+		end
+	end
+	Library.Presets[name] = preset
+	if not table.find(Library.PresetOrder, name) then
+		table.insert(Library.PresetOrder, name)
+	end
+	return true
+end
+
+-- First window whose Name matches (windows are removed from the list when destroyed)
+function Library:GetWindow(name)
+	for _, w in ipairs(Library.Windows) do
+		if w.Name == name then
+			return w
+		end
+	end
+	return nil
 end
 
 function Library:GetTheme()
@@ -329,7 +392,28 @@ local function register(flag, obj)
 	if flag then
 		Library.Flags[flag] = obj.Value
 		Library.Options[flag] = obj
+		obj._flag = flag
 	end
+end
+
+-- Removes an element's flag entries (only if they still point at that element)
+local function clearFlag(obj)
+	local flag = obj._flag
+	if flag and Library.Options[flag] == obj then
+		Library.Options[flag] = nil
+		Library.Flags[flag] = nil
+	end
+end
+
+-- Shallow copy so the caller's option tables are never mutated
+local function cloneOpts(t)
+	local copy = {}
+	if type(t) == "table" then
+		for k, v in pairs(t) do
+			copy[k] = v
+		end
+	end
+	return copy
 end
 
 local function isPointer(input)
@@ -444,6 +528,7 @@ local function makeIcon(parent, icon, size, defaultTint, props)
 end
 
 -- Avatar / headshot helper (yields). Use the result as `Image` in AddImage.
+-- Returns (image, nil) on success or (nil, errorMessage) on failure so callers can branch.
 function Library:GetAvatar(userId, thumbType, thumbSize)
 	local ok, content = pcall(function()
 		return Players:GetUserThumbnailAsync(
@@ -452,12 +537,88 @@ function Library:GetAvatar(userId, thumbType, thumbSize)
 			thumbSize or Enum.ThumbnailSize.Size150x150
 		)
 	end)
-	return ok and content or nil
+	if ok and content then
+		return content, nil
+	end
+	return nil, ok and "no thumbnail returned" or tostring(content)
 end
 
 ----------------------------------------------------------------------
 -- Window
 ----------------------------------------------------------------------
+
+-- Responsive scaling: shrink the window (never enlarge it) to fit the viewport and keep it on-screen.
+-- Re-applied on every viewport change; it never fights the SetVisible / SetMinimized tweens
+-- (while window._tweening is set, only window._fit is updated and _BeginTween re-applies afterwards).
+local function hookViewport(window)
+	local camConn = nil
+
+	local function viewportSize()
+		local cam = workspace.CurrentCamera
+		local vp = cam and cam.ViewportSize or Vector2.new(0, 0)
+		if vp.X < 100 or vp.Y < 100 then
+			vp = window.Gui.AbsoluteSize -- camera not ready: fall back to the gui size
+		end
+		return vp
+	end
+
+	local function apply(recenter)
+		if window._destroyed then
+			return
+		end
+		local vp = viewportSize()
+		if vp.X < 100 or vp.Y < 100 then
+			return
+		end
+		local full = window.FullSize
+		-- the 0.3 floor keeps the UIScale positive on absurdly small viewports
+		local s = math.max(math.min(1, (vp.X - 40) / full.X, (vp.Y - 40) / full.Y), 0.3)
+		window._fit = s
+		if window._tweening then
+			return
+		end
+		window.Scale.Scale = s * (window.Visible and 1 or 0.95)
+
+		local w = full.X * s
+		local h = (window.Minimized and 26 or full.Y) * s
+		if recenter then
+			window.Main.Position = UDim2.fromOffset((vp.X - w) / 2, (vp.Y - h) / 2)
+		else
+			local pos = window.Main.Position
+			local x = pos.X.Scale * vp.X + pos.X.Offset
+			local y = pos.Y.Scale * vp.Y + pos.Y.Offset
+			window.Main.Position = UDim2.fromOffset(
+				math.clamp(x, 0, math.max(vp.X - w, 0)),
+				math.clamp(y, 0, math.max(vp.Y - h, 0))
+			)
+		end
+	end
+
+	local function bindCamera()
+		if camConn then
+			camConn:Disconnect()
+			camConn = nil
+		end
+		local cam = workspace.CurrentCamera
+		if cam then
+			camConn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+				apply(false)
+			end)
+		end
+		apply(false)
+	end
+
+	window._applyFit = apply
+	window._viewportCleanup = function()
+		if camConn then
+			camConn:Disconnect()
+			camConn = nil
+		end
+	end
+	window:_Connect(workspace:GetPropertyChangedSignal("CurrentCamera"), bindCamera)
+	bindCamera()
+	apply(true)
+end
 
 local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
@@ -487,6 +648,9 @@ function Library:CreateWindow(config)
 	self.Visible = false
 	self.Minimized = false
 	self._notifyOrder = 0
+	self._notifications = {}
+	self.MaxVisible = config.MaxVisible or 5
+	self._fit = 1
 
 	local size = config.Size or UDim2.fromOffset(600, 400)
 	-- Pixel size (a Scale component is converted using the camera viewport)
@@ -507,7 +671,7 @@ function Library:CreateWindow(config)
 		ResetOnSpawn = false,
 		IgnoreGuiInset = true,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-		DisplayOrder = 2147483647, -- max int32 (math.huge is not a valid int property value)
+		DisplayOrder = 2147483647, -- max int32 (DisplayOrder is an int property)
 		-- Stays visible AND clickable above the Roblox escape menu (core blur layer)
 		OnTopOfCoreBlur = config.AboveMenu ~= false,
 	}, parent)
@@ -709,6 +873,7 @@ function Library:CreateWindow(config)
 		end
 	end)
 
+	hookViewport(self)
 	table.insert(Library.Windows, self)
 	self:SetVisible(true) -- fade-in
 	return self
@@ -720,19 +885,37 @@ function Window:_Connect(signal, fn)
 	return c
 end
 
+-- Marks the window as "mid-tween" so the responsive fit does not fight the animation;
+-- the fit is re-applied (and the window re-clamped on-screen) when the tween ends.
+function Window:_BeginTween(duration)
+	self._tweenToken = (self._tweenToken or 0) + 1
+	local token = self._tweenToken
+	self._tweening = true
+	task.delay(duration + 0.02, function()
+		if self._tweenToken == token and not self._destroyed then
+			self._tweening = false
+			if self._applyFit then
+				self._applyFit(false)
+			end
+		end
+	end)
+end
+
 function Window:SetVisible(visible)
 	if self.Visible == visible then
 		return
 	end
 	self.Visible = visible
 	if visible then
+		self:_BeginTween(0.22)
 		self.Main.Visible = true
 		tween(self.Main, { GroupTransparency = 0 }, 0.22)
-		tween(self.Scale, { Scale = 1 }, 0.22, Enum.EasingStyle.Back)
+		tween(self.Scale, { Scale = self._fit }, 0.22, Enum.EasingStyle.Back)
 	else
+		self:_BeginTween(0.16)
 		self:_CloseDropdown()
 		tween(self.Main, { GroupTransparency = 1 }, 0.16)
-		tween(self.Scale, { Scale = 0.95 }, 0.16)
+		tween(self.Scale, { Scale = 0.95 * self._fit }, 0.16)
 		task.delay(0.17, function()
 			if not self.Visible and self.Main and self.Main.Parent then
 				self.Main.Visible = false
@@ -747,6 +930,7 @@ function Window:SetMinimized(minimized)
 		return
 	end
 	self.Minimized = minimized
+	self:_BeginTween(0.25)
 	self:_CloseDropdown()
 	self.MinBtn.Text = minimized and "+" or "-"
 	if minimized then
@@ -782,6 +966,10 @@ function Window:Close()
 end
 
 function Window:Destroy()
+	self._destroyed = true
+	if self._viewportCleanup then
+		self._viewportCleanup()
+	end
 	self:_CloseDropdown()
 	for _, c in ipairs(self.Connections) do
 		c:Disconnect()
@@ -860,14 +1048,31 @@ function Window:Notify(o)
 
 	tween(n, { GroupTransparency = 0 }, 0.2)
 	tween(fill, { Size = UDim2.fromScale(0, 1) }, duration, Enum.EasingStyle.Linear)
-	task.delay(duration, function()
+
+	local entry = { dismissed = false }
+	function entry.dismiss()
+		if entry.dismissed then
+			return
+		end
+		entry.dismissed = true
+		local i = table.find(self._notifications, entry)
+		if i then
+			table.remove(self._notifications, i)
+		end
 		if n.Parent then
 			tween(n, { GroupTransparency = 1 }, 0.25)
 			task.delay(0.26, function()
 				n:Destroy()
 			end)
 		end
-	end)
+	end
+	table.insert(self._notifications, entry)
+	task.delay(duration, entry.dismiss)
+
+	-- Over the limit: the oldest notification fades out early instead of waiting for its duration
+	while #self._notifications > math.max(self.MaxVisible or 5, 1) do
+		self._notifications[1].dismiss()
+	end
 end
 
 function Window:_ApplySearch()
@@ -882,8 +1087,10 @@ function Window:_ApplySearch()
 		local any = titleMatch
 		for _, el in ipairs(gb.Elements) do
 			local match = titleMatch or string.find(string.lower(el.Name), q, 1, true) ~= nil
-			el.Frame.Visible = match
-			any = any or match
+			el.Match = match
+			-- elements hidden through :SetVisible(false) stay hidden whatever the search says
+			el.Frame.Visible = match and not el.Hidden
+			any = any or (match and not el.Hidden)
 		end
 		gb.Frame.Visible = any
 	end
@@ -947,13 +1154,18 @@ function Window:SelectTab(tab)
 	end
 end
 
-function Window:CreateTab(name, icon)
+function Window:CreateTab(name, icon, opts)
 	local tab = setmetatable({}, Tab)
 	tab.Window = self
 	tab.Name = name
 	tab.Categories = {}
 	tab.ActiveCategory = nil
 	tab.UsesCategories = false
+	-- categoriesOnly: no implicit "Main" page, the category bar is always the navigation
+	tab.CategoriesOnly = type(opts) == "table" and opts.categoriesOnly == true
+	if tab.CategoriesOnly then
+		tab.UsesCategories = true
+	end
 
 	local iconSize = 14
 	local hasIcon = resolveIcon(icon) ~= nil
@@ -995,12 +1207,18 @@ function Window:CreateTab(name, icon)
 	}, tab.Button)
 
 	-- Category bar (sub-navigation), only shown when the tab has categories
-	tab.CatBar = create("Frame", {
+	-- horizontal ScrollingFrame: with many categories / a narrow window the bar scrolls instead of clipping
+	tab.CatBar = create("ScrollingFrame", {
 		Position = UDim2.fromOffset(10, 60),
 		Size = UDim2.new(1, -170, 0, 24),
 		BackgroundTransparency = 1,
+		ScrollBarThickness = 0,
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		AutomaticCanvasSize = Enum.AutomaticSize.X,
+		CanvasSize = UDim2.new(),
 		Visible = false,
 	}, self.Body)
+	addPadding(tab.CatBar, 1, 0, 1, 0)
 	local cl = addList(tab.CatBar, 4, true)
 	cl.VerticalAlignment = Enum.VerticalAlignment.Center
 
@@ -1063,10 +1281,11 @@ function Window:_OpenPopup(position, size, build, onClose)
 	build(frame)
 end
 
-function Window:_OpenDropdown(anchor, options, current, onPick, onClose, multi)
+function Window:_OpenDropdown(anchor, options, current, onPick, onClose, multi, searchable)
 	self:_CloseDropdown()
 	local itemH = 20
-	local height = math.min(#options, 6) * itemH
+	local searchH = searchable and 20 or 0 -- searchable popups are ~20px taller
+	local height = math.min(#options, 6) * itemH + searchH
 	local pos = anchor.AbsolutePosition
 	local y = pos.Y + anchor.AbsoluteSize.Y + 2
 	if y + height > self.Gui.AbsoluteSize.Y then
@@ -1076,18 +1295,67 @@ function Window:_OpenDropdown(anchor, options, current, onPick, onClose, multi)
 	self.Overlay.Visible = true
 	self._dropOnClose = onClose
 
-	local list = create("ScrollingFrame", {
-		BackgroundColor3 = "Panel",
-		Position = UDim2.fromOffset(pos.X, y),
-		Size = UDim2.fromOffset(anchor.AbsoluteSize.X, height),
-		CanvasSize = UDim2.new(),
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		ScrollBarThickness = 3,
-		ScrollBarImageColor3 = "Border",
-	}, self.Overlay)
-	addStroke(list, "Border")
-	addList(list, 0)
-	self._dropList = list
+	local list
+	if searchable then
+		local holder = create("Frame", {
+			BackgroundColor3 = "Panel",
+			Position = UDim2.fromOffset(pos.X, y),
+			Size = UDim2.fromOffset(anchor.AbsoluteSize.X, height),
+			Active = true, -- swallow clicks so the overlay does not close the popup
+		}, self.Overlay)
+		addStroke(holder, "Border")
+		local search = create("TextBox", {
+			Size = UDim2.new(1, 0, 0, searchH),
+			PlaceholderText = "search...",
+			PlaceholderColor3 = "SubText",
+			ClearTextOnFocus = false,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextSize = 11,
+		}, holder)
+		addPadding(search, 6, 0, 6, 0)
+		create("Frame", {
+			Position = UDim2.fromOffset(0, searchH - 1),
+			Size = UDim2.new(1, 0, 0, 1),
+			BackgroundColor3 = "Border",
+		}, holder)
+		list = create("ScrollingFrame", {
+			Position = UDim2.fromOffset(0, searchH),
+			Size = UDim2.new(1, 0, 1, -searchH),
+			BackgroundTransparency = 1,
+			CanvasSize = UDim2.new(),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = "Border",
+		}, holder)
+		addList(list, 0)
+		self._dropList = holder
+
+		-- live filter (the option buttons carry the option text)
+		search:GetPropertyChangedSignal("Text"):Connect(function()
+			local q = string.lower(search.Text)
+			for _, child in ipairs(list:GetChildren()) do
+				if child:IsA("TextButton") then
+					child.Visible = q == "" or string.find(string.lower(child.Text), q, 1, true) ~= nil
+				end
+			end
+		end)
+		if not UserInputService.TouchEnabled then
+			search:CaptureFocus()
+		end
+	else
+		list = create("ScrollingFrame", {
+			BackgroundColor3 = "Panel",
+			Position = UDim2.fromOffset(pos.X, y),
+			Size = UDim2.fromOffset(anchor.AbsoluteSize.X, height),
+			CanvasSize = UDim2.new(),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = "Border",
+		}, self.Overlay)
+		addStroke(list, "Border")
+		addList(list, 0)
+		self._dropList = list
+	end
 
 	for i, opt in ipairs(options) do
 		local hovered = false
@@ -1168,7 +1436,7 @@ local function createPicker(window, host, o, offsetX)
 		tween(swatchStroke, { Color = T.Border })
 	end)
 
-	local picker = { Name = o.Name or "Color", Value = default }
+	local picker = { Name = o.Name or "Color", Value = default, Kind = "color" }
 	local refreshPopup = nil
 
 	local function apply(silent)
@@ -1193,6 +1461,16 @@ local function createPicker(window, host, o, offsetX)
 
 	function picker:Get()
 		return self.Value
+	end
+
+	-- Default destroy = remove just the swatch (a picker living on a toggle row).
+	-- Groupbox:AddColorPicker replaces this with a row-level destroy.
+	function picker:Destroy()
+		if refreshPopup then
+			window:_CloseDropdown() -- its popup is open
+		end
+		clearFlag(self)
+		swatch:Destroy()
 	end
 
 	swatch.MouseButton1Click:Connect(function()
@@ -1338,7 +1616,7 @@ end
 ----------------------------------------------------------------------
 
 -- Creates a sub-page. Used by CreateCategory and by the implicit "Main" page.
-function Tab:_NewCategory(name, icon)
+function Tab:_NewCategory(name, icon, order)
 	local window = self.Window
 	local cat = setmetatable({}, Category)
 	cat.Tab = self
@@ -1355,7 +1633,7 @@ function Tab:_NewCategory(name, icon)
 	cat.Button = create("TextButton", {
 		Size = UDim2.fromOffset(width, 20),
 		BackgroundColor3 = "Element",
-		LayoutOrder = #self.Categories + 1,
+		LayoutOrder = order or (#self.Categories + 1),
 	}, self.CatBar)
 	cat.Stroke = addStroke(cat.Button, "Border")
 	cat.Stroke.Transparency = 1
@@ -1446,23 +1724,27 @@ function Tab:_NewCategory(name, icon)
 	return cat
 end
 
-function Tab:CreateCategory(name, icon)
+function Tab:CreateCategory(name, icon, order)
 	self.UsesCategories = true
-	local cat = self:_NewCategory(name, icon)
+	local cat = self:_NewCategory(name, icon, order)
 	self.CatBar.Visible = self.Window.ActiveTab == self
 	return cat
 end
 
 -- Sections created directly on the tab go in an implicit "Main" page
-function Tab:CreateSection(name, side, icon)
+function Tab:CreateSection(name, side, icon, order)
+	if self.CategoriesOnly then
+		warn("[MalaphasUI] Tab '" .. tostring(self.Name) .. "' is categoriesOnly: use :CreateCategory(...):CreateSection(...)")
+		return nil
+	end
 	if not self._default then
 		self._default = self:_NewCategory("Main")
 	end
-	return self._default:CreateSection(name, side, icon)
+	return self._default:CreateSection(name, side, icon, order)
 end
 Tab.CreateGroupbox = Tab.CreateSection
 
-function Category:CreateSection(name, side, icon)
+function Category:CreateSection(name, side, icon, order)
 	local column = self.Columns[side or "Left"] or self.Columns.Left
 	local gb = setmetatable({}, Groupbox)
 	gb.Tab = self.Tab
@@ -1476,7 +1758,7 @@ function Category:CreateSection(name, side, icon)
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = "Panel",
-		LayoutOrder = #self.Groupboxes + 1,
+		LayoutOrder = order or (#self.Groupboxes + 1),
 	}, column)
 	addStroke(gb.Frame, "Border")
 	addList(gb.Frame, 0)
@@ -1530,7 +1812,38 @@ function Groupbox:_Row(height)
 end
 
 function Groupbox:_Register(name, frame)
-	table.insert(self.Elements, { Name = name, Frame = frame })
+	-- Match = passes the current search filter; Hidden = hidden through :SetVisible(false)
+	local entry = { Name = name, Frame = frame, Match = true, Hidden = false }
+	table.insert(self.Elements, entry)
+	return entry
+end
+
+-- Visibility that survives the search filter
+local function setEntryVisible(entry, visible)
+	entry.Hidden = not visible
+	entry.Frame.Visible = visible and entry.Match
+end
+
+-- Adds an idempotent :Destroy() to an element object: removes the row from Groupbox.Elements,
+-- clears the Library.Flags / Library.Options entry, runs `extra` (disconnect inputs, close popups)
+-- and destroys the row frame.
+local function attachDestroy(groupbox, obj, entry, extra)
+	local destroyed = false
+	function obj:Destroy()
+		if destroyed then
+			return
+		end
+		destroyed = true
+		local i = table.find(groupbox.Elements, entry)
+		if i then
+			table.remove(groupbox.Elements, i)
+		end
+		clearFlag(obj)
+		if extra then
+			extra()
+		end
+		entry.Frame:Destroy()
+	end
 end
 
 ----------------------------------------------------------------------
@@ -1540,20 +1853,45 @@ end
 function Groupbox:AddLabel(text)
 	local row = self:_Row(16)
 	row.AutomaticSize = Enum.AutomaticSize.Y -- long labels wrap instead of overlapping the next row
+	local colorSource = nil -- nil = default SubText; Color3 or theme key set through :SetColor
 	local label = create("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Text = text or "",
-		TextColor3 = "SubText",
+		-- function source: keeps following the theme unless a custom color was set
+		TextColor3 = function()
+			if typeof(colorSource) == "Color3" then
+				return colorSource
+			elseif type(colorSource) == "string" and typeof(T[colorSource]) == "Color3" then
+				return T[colorSource]
+			end
+			return T.SubText
+		end,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		TextWrapped = true,
 	}, row)
-	self:_Register(text or "", row)
+	local entry = self:_Register(text or "", row)
 	local obj = {}
 	function obj:SetText(t)
 		label.Text = t
 	end
+	-- color = Color3, theme key ("Accent", "Danger"...) or nil to go back to the default
+	function obj:SetColor(color)
+		colorSource = color
+		if typeof(color) == "Color3" then
+			label.TextColor3 = color
+		elseif type(color) == "string" and typeof(T[color]) == "Color3" then
+			label.TextColor3 = T[color]
+		else
+			colorSource = nil
+			label.TextColor3 = T.SubText
+		end
+	end
+	function obj:SetVisible(visible)
+		setEntryVisible(entry, visible)
+	end
+	attachDestroy(self, obj, entry)
 	return obj
 end
 
@@ -1578,8 +1916,14 @@ function Groupbox:AddDivider(text)
 			TextColor3 = "SubText",
 		}, row)
 	end
-	self:_Register(text or "", row)
-	return row
+	local entry = self:_Register(text or "", row)
+	-- object like the other elements (the raw frame stays reachable through .Frame)
+	local obj = { Frame = row }
+	function obj:SetVisible(visible)
+		setEntryVisible(entry, visible)
+	end
+	attachDestroy(self, obj, entry)
+	return obj
 end
 
 -- Full-width image (banner, avatar, logo...). Not tinted unless you pass Color / Tint.
@@ -1636,7 +1980,15 @@ function Groupbox:AddImage(o)
 	end
 
 	obj:Set(o.Image)
-	self:_Register(o.Name or "", row)
+	local entry = self:_Register(o.Name or "", row)
+	function obj:SetVisible(visible)
+		setEntryVisible(entry, visible)
+	end
+	-- opacity: 1 = fully visible, 0 = invisible
+	function obj:SetOpacity(opacity)
+		img.ImageTransparency = 1 - math.clamp(tonumber(opacity) or 1, 0, 1)
+	end
+	attachDestroy(self, obj, entry)
 	return obj
 end
 
@@ -1650,7 +2002,7 @@ function Groupbox:AddToggle(o)
 	local window = self.Window
 	local row = self:_Row(20)
 
-	local toggle = { Name = name, Value = false, _pickers = 0 }
+	local toggle = { Name = name, Value = false, Kind = "boolean", _pickers = 0, _children = {} }
 
 	local function labelColor()
 		return toggle.Value and T.Text or T.SubText
@@ -1717,11 +2069,12 @@ function Groupbox:AddToggle(o)
 
 	-- Adds a color swatch on the right of this toggle's row (stackable)
 	function toggle:AddColorPicker(opts)
-		opts = opts or {}
+		opts = cloneOpts(opts) -- never mutate the caller's table
 		opts.Name = opts.Name or name
 		local picker = createPicker(window, row, opts, self._pickers * 28)
 		self._pickers += 1
 		register(opts.Flag, picker)
+		table.insert(self._children, picker)
 		return picker
 	end
 
@@ -1741,7 +2094,13 @@ function Groupbox:AddToggle(o)
 
 	toggle:Set(o.Default == true, true)
 	register(o.Flag, toggle)
-	self:_Register(name, row)
+	local entry = self:_Register(name, row)
+	attachDestroy(self, toggle, entry, function()
+		for _, child in ipairs(toggle._children) do
+			clearFlag(child) -- the swatches die with the row but their flags must go too
+		end
+		window:_CloseDropdown()
+	end)
 	return toggle
 end
 
@@ -1765,7 +2124,8 @@ function Groupbox:AddSlider(o)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = "SubText",
 	}, row)
-	local valueLabel = create("TextLabel", {
+	-- TextButton (not a label) so a double-click on the value can open the text editor
+	local valueLabel = create("TextButton", {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, 0, 0, 0),
 		Size = UDim2.fromOffset(70, 14),
@@ -1786,7 +2146,7 @@ function Groupbox:AddSlider(o)
 		BackgroundColor3 = "Accent",
 	}, track)
 
-	local slider = { Name = name, Value = min }
+	local slider = { Name = name, Value = min, Kind = "number" }
 
 	local function snap(v)
 		v = math.clamp(v, min, max)
@@ -1816,6 +2176,29 @@ function Groupbox:AddSlider(o)
 		return self.Value
 	end
 
+	-- Change the range at runtime; the current value is re-snapped into the new range
+	function slider:SetMin(n)
+		if type(n) ~= "number" or n ~= n then
+			return
+		end
+		min = n
+		if max < min then
+			max = min
+		end
+		self:Set(self.Value)
+	end
+
+	function slider:SetMax(n)
+		if type(n) ~= "number" or n ~= n then
+			return
+		end
+		max = n
+		if min > max then
+			min = max
+		end
+		self:Set(self.Value)
+	end
+
 	local dragging = false
 	local function updateFromX(x)
 		local alpha = math.clamp((x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
@@ -1828,20 +2211,93 @@ function Groupbox:AddSlider(o)
 			updateFromX(input.Position.X)
 		end
 	end)
-	window:_Connect(UserInputService.InputChanged, function(input)
+	local connMove = window:_Connect(UserInputService.InputChanged, function(input)
 		if dragging and isMove(input) then
 			updateFromX(input.Position.X)
 		end
 	end)
-	window:_Connect(UserInputService.InputEnded, function(input)
+	local connEnd = window:_Connect(UserInputService.InputEnded, function(input)
 		if isPointer(input) then
 			dragging = false
 		end
 	end)
 
+	-- Double-click the value to type a number (parsed, then snapped by slider:Set -> snap)
+	local editBox = nil
+	local lastClick = 0
+
+	local function finishEdit()
+		if editBox then
+			editBox:Destroy()
+			editBox = nil
+		end
+		valueLabel.Visible = true
+	end
+
+	local function startEdit()
+		if editBox then
+			return
+		end
+		valueLabel.Visible = false
+		local box = create("TextBox", {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, 0, 0, 0),
+			Size = UDim2.fromOffset(70, 14),
+			BackgroundTransparency = 0,
+			BackgroundColor3 = "Element",
+			Text = string.format("%." .. decimals .. "f", slider.Value),
+			TextXAlignment = Enum.TextXAlignment.Right,
+			ClearTextOnFocus = false,
+			TextSize = 11,
+		}, row)
+		local stroke = addStroke(box, "Accent")
+		editBox = box
+		box.FocusLost:Connect(function()
+			local text = box.Text
+			if suffix ~= "" then
+				-- let the user keep the suffix ("50%")
+				local s, e = string.find(text, suffix, 1, true)
+				if s then
+					text = string.sub(text, 1, s - 1) .. string.sub(text, e + 1)
+				end
+			end
+			local n = tonumber(text)
+			if n and n == n then
+				slider:Set(n)
+				if editBox == box then
+					finishEdit()
+				end
+			else
+				-- invalid input: flash the border red for ~0.4s, then revert to the label
+				stroke.Color = T.Danger
+				box.Text = string.format("%." .. decimals .. "f", slider.Value)
+				task.delay(0.4, function()
+					if editBox == box then
+						finishEdit()
+					end
+				end)
+			end
+		end)
+		box:CaptureFocus()
+	end
+
+	valueLabel.MouseButton1Click:Connect(function()
+		local now = os.clock()
+		if now - lastClick < 0.3 then
+			lastClick = 0
+			startEdit()
+		else
+			lastClick = now
+		end
+	end)
+
 	slider:Set(o.Default ~= nil and o.Default or min, true)
 	register(o.Flag, slider)
-	self:_Register(name, row)
+	local entry = self:_Register(name, row)
+	attachDestroy(self, slider, entry, function()
+		connMove:Disconnect()
+		connEnd:Disconnect()
+	end)
 	return slider
 end
 
@@ -1886,7 +2342,7 @@ function Groupbox:AddDropdown(o)
 		TextColor3 = "SubText",
 	}, box)
 
-	local dropdown = { Name = name, Value = nil, Options = options }
+	local dropdown = { Name = name, Value = nil, Options = options, Kind = "dropdown", Multi = multi }
 	local selected = {} -- multi mode: map option -> true (mutated in place, never reassigned)
 
 	local function commitMulti(silent)
@@ -1935,16 +2391,31 @@ function Groupbox:AddDropdown(o)
 		return self.Value
 	end
 
+	-- Returns the values of the previous selection that are not in newOptions
+	-- ("dropped" is computed against the new list whatever keepValue says).
 	function dropdown:Refresh(newOptions, keepValue)
+		local dropped = {}
+		local previous = multi and self.Value or { self.Value }
+		for _, v in ipairs(previous) do
+			if table.find(newOptions, v) == nil then
+				table.insert(dropped, v)
+			end
+		end
+
 		self.Options = newOptions
 		if multi then
-			if not keepValue then
+			if keepValue then
+				for _, v in ipairs(dropped) do
+					selected[v] = nil -- stale entries must not survive a refresh
+				end
+			else
 				table.clear(selected)
 			end
 			commitMulti(true)
 		elseif not keepValue or table.find(newOptions, self.Value) == nil then
 			self:Set(newOptions[1], true)
 		end
+		return dropped
 	end
 
 	box.MouseEnter:Connect(function()
@@ -1964,7 +2435,7 @@ function Groupbox:AddDropdown(o)
 			end
 		end, function()
 			arrow.Text = "+"
-		end, multi)
+		end, multi, o.Searchable == true)
 	end)
 
 	if multi then
@@ -1973,7 +2444,10 @@ function Groupbox:AddDropdown(o)
 		dropdown:Set(o.Default ~= nil and o.Default or options[1], true)
 	end
 	register(o.Flag, dropdown)
-	self:_Register(name, row)
+	local entry = self:_Register(name, row)
+	attachDestroy(self, dropdown, entry, function()
+		window:_CloseDropdown()
+	end)
 	return dropdown
 end
 
@@ -1995,38 +2469,81 @@ function Groupbox:AddButton(o)
 	}, self.Content)
 	local stroke = addStroke(button, "Border")
 
-	if o.Icon then
-		makeIcon(button, o.Icon, 14, "Text", {
-			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, 8, 0.5, 0),
-		})
+	local enabled = true
+	local icon = nil
+
+	local function buildIcon(spec)
+		if icon then
+			icon:Destroy()
+			icon = nil
+		end
+		if spec then
+			icon = makeIcon(button, spec, 14, "Text", {
+				AnchorPoint = Vector2.new(0, 0.5),
+				Position = UDim2.new(0, 8, 0.5, 0),
+				ImageTransparency = enabled and 0 or 0.55,
+			})
+		end
 	end
+	buildIcon(o.Icon)
 
 	button.MouseEnter:Connect(function()
+		if not enabled then
+			return
+		end
 		tween(button, { BackgroundColor3 = T.ElementHover })
 		tween(stroke, { Color = T.BorderHover })
 	end)
 	button.MouseLeave:Connect(function()
+		if not enabled then
+			return
+		end
 		tween(button, { BackgroundColor3 = T.Element })
 		tween(stroke, { Color = T.Border })
 	end)
 	button.MouseButton1Down:Connect(function()
+		if not enabled then
+			return
+		end
 		tween(button, { BackgroundColor3 = T.ElementPress }, 0.06)
 	end)
 	button.MouseButton1Up:Connect(function()
+		if not enabled then
+			return
+		end
 		tween(button, { BackgroundColor3 = T.ElementHover }, 0.15)
 	end)
 	button.MouseButton1Click:Connect(function()
-		if o.Callback then
+		if enabled and o.Callback then
 			task.spawn(o.Callback)
 		end
 	end)
 
-	self:_Register(name, button)
+	local entry = self:_Register(name, button)
 	local obj = {}
 	function obj:SetText(t)
 		button.Text = t
 	end
+	function obj:SetIcon(spec)
+		buildIcon(spec)
+	end
+	function obj:SetVisible(visible)
+		setEntryVisible(entry, visible)
+	end
+	-- disabled = dimmed + clicks (and hover effects) are ignored
+	function obj:SetEnabled(state)
+		enabled = not not state
+		button.TextTransparency = enabled and 0 or 0.55
+		stroke.Transparency = enabled and 0 or 0.55
+		if icon then
+			icon.ImageTransparency = enabled and 0 or 0.55
+		end
+		if not enabled then
+			tween(button, { BackgroundColor3 = T.Element })
+			tween(stroke, { Color = T.Border })
+		end
+	end
+	attachDestroy(self, obj, entry)
 	return obj
 end
 
@@ -2035,7 +2552,7 @@ end
 ----------------------------------------------------------------------
 
 function Groupbox:AddColorPicker(o)
-	o = o or {}
+	o = cloneOpts(o)
 	local name = o.Name or "Color"
 	local row = self:_Row(20)
 	create("TextLabel", {
@@ -2046,7 +2563,12 @@ function Groupbox:AddColorPicker(o)
 	}, row)
 	local picker = createPicker(self.Window, row, o, 0)
 	register(o.Flag, picker)
-	self:_Register(name, row)
+	local entry = self:_Register(name, row)
+	local window = self.Window
+	-- replaces the swatch-only destroy: here the whole row goes away
+	attachDestroy(self, picker, entry, function()
+		window:_CloseDropdown()
+	end)
 	return picker
 end
 
@@ -2058,6 +2580,9 @@ function Groupbox:AddThemeEditor(o)
 	o = o or {}
 	local keys = o.Keys or { "Accent", "Background", "Panel", "PanelHeader", "Element", "Border", "Text", "SubText" }
 	local pickers = {}
+	-- per-editor id: two editors (e.g. in two windows) never clobber each other's flags
+	Library._themeEditorCount = (Library._themeEditorCount or 0) + 1
+	local editorId = Library._themeEditorCount
 
 	local presetDropdown = self:AddDropdown({
 		Name = "Preset",
@@ -2075,7 +2600,7 @@ function Groupbox:AddThemeEditor(o)
 		pickers[key] = self:AddColorPicker({
 			Name = key,
 			Default = T[key],
-			Flag = "theme_" .. key,
+			Flag = "theme_" .. editorId .. "_" .. key,
 			Callback = function(color)
 				Library:SetTheme({ [key] = color })
 			end,
@@ -2083,7 +2608,7 @@ function Groupbox:AddThemeEditor(o)
 	end
 
 	self:AddButton({
-		Name = "Reset theme",
+		Name = "Reset to Default",
 		Callback = function()
 			Library:SetTheme("Default")
 			presetDropdown:Set("Default", true)
@@ -2102,7 +2627,8 @@ end
 function Groupbox:AddTextbox(o)
 	o = o or {}
 	local name = o.Name or "Textbox"
-	local row = self:_Row(22)
+	local multiLine = o.MultiLine == true
+	local row = self:_Row(multiLine and 48 or 22)
 	create("TextLabel", {
 		Size = UDim2.new(1, -124, 1, 0),
 		Text = name,
@@ -2113,20 +2639,23 @@ function Groupbox:AddTextbox(o)
 	local box = create("TextBox", {
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, 0, 0.5, 0),
-		Size = UDim2.fromOffset(116, 18),
+		Size = UDim2.fromOffset(116, multiLine and 44 or 18),
 		BackgroundTransparency = 0,
 		BackgroundColor3 = "Element",
 		PlaceholderText = o.Placeholder or "...",
 		PlaceholderColor3 = "SubText",
 		ClearTextOnFocus = o.ClearTextOnFocus == true,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = multiLine and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center,
+		TextWrapped = multiLine,
+		MultiLine = multiLine,
 		TextSize = 11,
 		ClipsDescendants = true,
 	}, row)
 	local stroke = addStroke(box, "Border")
-	addPadding(box, 6, 0, 6, 0)
+	addPadding(box, 6, multiLine and 3 or 0, 6, multiLine and 3 or 0)
 
-	local textbox = { Name = name, Value = o.Default or "" }
+	local textbox = { Name = name, Value = o.Default or "", Kind = o.Numeric and "number" or "string" }
 
 	function textbox:Set(value, silent)
 		self.Value = value
@@ -2147,15 +2676,23 @@ function Groupbox:AddTextbox(o)
 		tween(stroke, { Color = T.Accent })
 	end)
 	box.FocusLost:Connect(function()
-		tween(stroke, { Color = T.Border })
 		if o.Numeric then
 			local n = tonumber(box.Text)
 			if n then
+				tween(stroke, { Color = T.Border })
 				textbox:Set(n)
 			else
+				-- invalid number: flash the border red for ~0.4s, then restore it
+				stroke.Color = T.Danger
 				box.Text = tostring(textbox.Value)
+				task.delay(0.4, function()
+					if stroke.Parent then
+						tween(stroke, { Color = T.Border })
+					end
+				end)
 			end
 		else
+			tween(stroke, { Color = T.Border })
 			textbox:Set(box.Text)
 		end
 	end)
@@ -2176,7 +2713,8 @@ function Groupbox:AddTextbox(o)
 	end
 	textbox:Set(initial, true)
 	register(o.Flag, textbox)
-	self:_Register(name, row)
+	local entry = self:_Register(name, row)
+	attachDestroy(self, textbox, entry)
 	return textbox
 end
 
@@ -2198,7 +2736,7 @@ function Groupbox:AddKeybind(o)
 		TextColor3 = "SubText",
 	}, row)
 
-	local kb = { Name = name, Value = o.Default, State = false }
+	local kb = { Name = name, Value = o.Default, State = false, Kind = "keybind" }
 	local binding = false
 
 	local box = create("TextButton", {
@@ -2249,7 +2787,7 @@ function Groupbox:AddKeybind(o)
 		display()
 	end)
 
-	window:_Connect(UserInputService.InputBegan, function(input, processed)
+	local connBegan = window:_Connect(UserInputService.InputBegan, function(input, processed)
 		if binding then
 			if input.UserInputType == Enum.UserInputType.Keyboard then
 				tween(stroke, { Color = T.Border })
@@ -2278,7 +2816,7 @@ function Groupbox:AddKeybind(o)
 			task.spawn(o.Callback)
 		end
 	end)
-	window:_Connect(UserInputService.InputEnded, function(input)
+	local connEnded = window:_Connect(UserInputService.InputEnded, function(input)
 		if mode == "Hold" and kb.Value and input.KeyCode == kb.Value then
 			kb.State = false
 			if o.Callback then
@@ -2287,9 +2825,47 @@ function Groupbox:AddKeybind(o)
 		end
 	end)
 
+	-- Right-click: tiny context menu (window:_OpenPopup) with a single "Unbind" entry
+	box.MouseButton2Click:Connect(function()
+		local pos = box.AbsolutePosition
+		local viewport = window.Gui.AbsoluteSize
+		local w, h = 88, 20
+		local x = math.clamp(pos.X, 4, math.max(viewport.X - w - 4, 4))
+		local y = pos.Y + box.AbsoluteSize.Y + 2
+		if y + h > viewport.Y then
+			y = pos.Y - h - 2
+		end
+		window:_OpenPopup(Vector2.new(x, y), Vector2.new(w, h), function(frame)
+			local item = create("TextButton", {
+				Size = UDim2.fromScale(1, 1),
+				Text = "Unbind",
+				TextSize = 11,
+				TextColor3 = "SubText",
+				BackgroundColor3 = "ElementHover",
+			}, frame)
+			item.MouseEnter:Connect(function()
+				item.BackgroundTransparency = 0
+				item.TextColor3 = T.Accent
+			end)
+			item.MouseLeave:Connect(function()
+				item.BackgroundTransparency = 1
+				item.TextColor3 = T.SubText
+			end)
+			item.MouseButton1Click:Connect(function()
+				window:_CloseDropdown()
+				kb:Set(nil)
+			end)
+		end)
+	end)
+
 	display()
 	register(o.Flag, kb)
-	self:_Register(name, row)
+	local entry = self:_Register(name, row)
+	attachDestroy(self, kb, entry, function()
+		connBegan:Disconnect()
+		connEnded:Disconnect()
+		window:_CloseDropdown()
+	end)
 	return kb
 end
 
@@ -2331,14 +2907,14 @@ function Library:CreateWatermark(config)
 			return StatsService.Network.ServerStatsItem["Data Ping"]:GetValue()
 		end)
 		label.Text = string.format(
-			"%s  |  %s  |  %d fps  |  %d ms",
+			"%s  |  %s  |  %s fps  |  %d ms",
 			wm.Name,
 			Players.LocalPlayer.Name,
-			fps,
+			fps and tostring(fps) or "--",
 			ok and math.floor(ping) or 0
 		)
 	end
-	update(60)
+	update(nil) -- no fake first value: "-- fps" until the first half-second bucket completes
 
 	local renderConn = RunService.RenderStepped:Connect(function(dt)
 		frames += 1
@@ -2374,49 +2950,108 @@ end
 
 function Library:ExportConfig()
 	local data = {}
-	for flag, value in pairs(Library.Flags) do
+	-- iterate the options (not Flags) so an unbound keybind (nil value) is still exported
+	for flag, option in pairs(Library.Options) do
+		local value = option.Value
 		local t = typeof(value)
 		if t == "Color3" then
 			data[flag] = { _t = "Color3", v = value:ToHex() }
 		elseif t == "EnumItem" then
 			data[flag] = { _t = "KeyCode", v = value.Name }
+		elseif option.Kind == "keybind" then
+			data[flag] = { _t = "KeyCode" } -- unbound
 		elseif t == "table" then
 			data[flag] = { _t = "List", v = value }
-		elseif t == "number" or t == "string" or t == "boolean" then
+		elseif t == "number" then
+			if value == value and value > -1e308 and value < 1e308 then -- NaN / inf cannot be JSON-encoded
+				data[flag] = value
+			end
+		elseif t == "string" or t == "boolean" then
 			data[flag] = value
 		end
 	end
 	return HttpService:JSONEncode(data)
 end
 
-function Library:ImportConfig(json)
-	local ok, data = pcall(HttpService.JSONDecode, HttpService, json)
-	if not ok or type(data) ~= "table" then
-		return false
+local function isFiniteNumber(n)
+	return type(n) == "number" and n == n and n > -1e308 and n < 1e308
+end
+
+-- Checks a decoded config value against the option's kind.
+-- Returns (valid, parsedValue); invalid entries are skipped by ImportConfig.
+local function parseConfigValue(option, value)
+	local kind = option.Kind
+	if kind == "boolean" then
+		return type(value) == "boolean", value
+	elseif kind == "number" then
+		return isFiniteNumber(value), value
+	elseif kind == "string" then
+		return type(value) == "string", value
+	elseif kind == "dropdown" then
+		if option.Multi then
+			if type(value) ~= "table" or value._t ~= "List" or type(value.v) ~= "table" then
+				return false
+			end
+			local list = {}
+			for _, item in ipairs(value.v) do
+				if type(item) ~= "string" and not isFiniteNumber(item) then
+					return false
+				end
+				table.insert(list, item)
+			end
+			return true, list
+		end
+		return type(value) == "string" or isFiniteNumber(value), value
+	elseif kind == "color" then
+		if type(value) ~= "table" or value._t ~= "Color3" or type(value.v) ~= "string" then
+			return false
+		end
+		local ok, color = pcall(Color3.fromHex, value.v)
+		return ok and typeof(color) == "Color3", color
+	elseif kind == "keybind" then
+		if type(value) ~= "table" or value._t ~= "KeyCode" then
+			return false
+		end
+		if value.v == nil then
+			return true, nil -- explicitly unbound
+		end
+		if type(value.v) ~= "string" then
+			return false
+		end
+		local ok, key = pcall(function()
+			return Enum.KeyCode[value.v]
+		end)
+		return ok and typeof(key) == "EnumItem", key
 	end
+	return false
+end
+
+-- Returns true when at least one entry was applied, otherwise (false, reason).
+-- Entries whose type does not match their option (or whose flag is unknown) are skipped silently.
+function Library:ImportConfig(json)
+	if type(json) ~= "string" or json == "" then
+		return false, "empty config"
+	end
+	local ok, data = pcall(HttpService.JSONDecode, HttpService, json)
+	if not ok then
+		return false, "malformed JSON"
+	end
+	if type(data) ~= "table" then
+		return false, "config is not a JSON object"
+	end
+	local applied = 0
 	for flag, value in pairs(data) do
 		local option = Library.Options[flag]
-		if option then
-			if type(value) == "table" then
-				if value._t == "Color3" then
-					local okc, color = pcall(Color3.fromHex, value.v)
-					if okc then
-						option:Set(color)
-					end
-				elseif value._t == "KeyCode" then
-					local okk, key = pcall(function()
-						return Enum.KeyCode[value.v]
-					end)
-					if okk and key then
-						option:Set(key)
-					end
-				elseif value._t == "List" then
-					option:Set(value.v)
-				end
-			else
-				option:Set(value)
+		if option and option.Kind then
+			local valid, parsed = parseConfigValue(option, value)
+			if valid then
+				option:Set(parsed)
+				applied += 1
 			end
 		end
+	end
+	if applied == 0 then
+		return false, "nothing applied (no known flag with a valid value)"
 	end
 	return true
 end
