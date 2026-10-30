@@ -664,7 +664,41 @@ function Library:CreateWindow(config)
 		math.max(size.Y.Offset + size.Y.Scale * viewport.Y, 200)
 	)
 	self.FullSize = px
-	local parent = config.Parent or Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	-- ============================================================
+	-- Rayfield-style parent resolution:
+	--   1. config.Parent (explicit override)
+	--   2. gethui()         (executor-protected hidden UI)
+	--   3. syn.protect_gui + CoreGui (Synapse X)
+	--   4. CoreGui:FindFirstChild("RobloxGui")
+	--   5. CoreGui
+	--   6. PlayerGui (last resort, keeps the UI visible if CoreGui is locked)
+	-- ============================================================
+	local function resolveParent()
+		if config.Parent then
+			return config.Parent
+		end
+
+		if typeof(gethui) == "function" then
+			local ok, hidden = pcall(gethui)
+			if ok and hidden then
+				return hidden
+			end
+		end
+
+		-- syn.protect_gui must run before the gui is parented, so it is
+		-- handled separately below (it does not return a parent).
+		local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+		if robloxGui then
+			return robloxGui
+		end
+
+		if CoreGui then
+			return CoreGui
+		end
+
+		return Players.LocalPlayer:WaitForChild("PlayerGui")
+	end
 
 	local gui = create("ScreenGui", {
 		Name = RandomString(27),
@@ -674,8 +708,31 @@ function Library:CreateWindow(config)
 		DisplayOrder = 2147483647, -- max int32 (DisplayOrder is an int property)
 		-- Stays visible AND clickable above the Roblox escape menu (core blur layer)
 		OnTopOfCoreBlur = config.AboveMenu ~= false,
-	}, parent)
+	}, nil) -- parent assigned below
 	self.Gui = gui
+
+	-- Protects the gui from coregui detection (Synapse X style executors).
+	-- Must be called before parenting.
+	if not config.Parent and typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
+		pcall(syn.protect_gui, gui)
+	end
+
+	local parent = resolveParent()
+	gui.Parent = parent
+
+	-- Disable old instances with the same name (Rayfield behaviour).
+	-- Wrapped in pcall because some executors block reading CoreGui children.
+	local scanRoot = parent
+	if scanRoot then
+		pcall(function()
+			for _, interface in ipairs(scanRoot:GetChildren()) do
+				if interface ~= gui and interface.Name == gui.Name then
+					interface.Enabled = false
+					interface.Name = gui.Name .. "-Old"
+				end
+			end
+		end)
+	end
 
 	-- CanvasGroup = the whole window can fade in/out
 	local main = create("CanvasGroup", {
