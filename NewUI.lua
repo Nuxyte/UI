@@ -1,6 +1,6 @@
 --!nonstrict
 --[[
-	NicoTine Modern v1.0 - modern Roblox UI library (Luau). Single ModuleScript, no dependencies.
+	NicoTine Modern v1.1 - modern Roblox UI library (Luau). Single ModuleScript, no dependencies.
 	Style: sidebar tabs, rounded cards, switch toggles, animated popups, toasts, dialogs.
 
 	Placement : ModuleScript "NicoTineModern" in ReplicatedStorage, or loadstring() it in an executor.
@@ -55,7 +55,7 @@ local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 
 local Library = {
-	Version = "1.0.0",
+	Version = "1.1.0",
 	Flags = {},
 	Options = {},
 	Windows = {},
@@ -242,8 +242,8 @@ local function addTheme(name, t)
 end
 
 addTheme("Dark", {
-	Background = C(18, 19, 22), Surface = C(27, 28, 33), SurfaceHover = C(36, 38, 45), Stroke = C(44, 46, 54),
-	Text = C(236, 238, 242), SubText = C(140, 146, 158), Accent = C(79, 142, 247), AccentText = C(255, 255, 255),
+	Background = C(17, 17, 19), Surface = C(25, 25, 28), SurfaceHover = C(34, 34, 38), Stroke = C(42, 42, 47),
+	Text = C(238, 238, 240), SubText = C(138, 138, 146), Accent = C(255, 145, 77), AccentText = C(30, 17, 6),
 	Success = C(72, 199, 142), Warning = C(245, 181, 68), Danger = C(240, 98, 98),
 })
 addTheme("Midnight", {
@@ -582,7 +582,7 @@ function Library:CreateWindow(config)
 	local main = win:_make("CanvasGroup", {
 		Name = "Main", Parent = root, Size = UDim2.fromScale(1, 1), BorderSizePixel = 0, GroupTransparency = 1,
 	}, { BackgroundColor3 = "Background" })
-	corner(main, 12)
+	corner(main, 10)
 	win:_stroke(main)
 	win.Main = main
 
@@ -675,8 +675,15 @@ function Library:CreateWindow(config)
 		Parent = sidebar, Position = UDim2.fromOffset(0, 52), Size = UDim2.new(1, 0, 1, -52), BackgroundTransparency = 1,
 		BorderSizePixel = 0, ScrollBarThickness = 0, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	})
-	pad(win.TabList, 4, 10, 10, 10)
-	layout(win.TabList, "V", 4)
+	-- sliding highlight behind the active tab, then the holder that lays the tab buttons out
+	win.Indicator = win:_make("Frame", {
+		Parent = win.TabList, Size = UDim2.fromOffset(0, 34), BorderSizePixel = 0, BackgroundTransparency = 0.86, Visible = false,
+	}, { BackgroundColor3 = "Accent" })
+	corner(win.Indicator, 8)
+	win:_make("UIStroke", { Parent = win.Indicator, Thickness = 1, Transparency = 0.72, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, { Color = "Accent" })
+	win.TabHolder = win:_make("Frame", { Parent = win.TabList, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 })
+	pad(win.TabHolder, 4, 10, 10, 10)
+	layout(win.TabHolder, "V", 4)
 
 	win.Content = win:_make("Frame", {
 		Parent = body, Position = UDim2.fromOffset(sidebarW, 0), Size = UDim2.new(1, -sidebarW, 1, 0), BackgroundTransparency = 1,
@@ -1045,11 +1052,11 @@ function Window:AddTabDivider(text)
 	self._tabOrder = self._tabOrder + 1
 	if text and text ~= "" then
 		self:_make("TextLabel", {
-			Parent = self.TabList, Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, Text = string.upper(text),
+			Parent = self.TabHolder, Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, Text = string.upper(text),
 			Font = Library.FontBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = self._tabOrder,
 		}, { TextColor3 = "SubText" })
 	else
-		self:_make("Frame", { Parent = self.TabList, Size = UDim2.new(1, 0, 0, 1), BorderSizePixel = 0, LayoutOrder = self._tabOrder }, { BackgroundColor3 = "Stroke" })
+		self:_make("Frame", { Parent = self.TabHolder, Size = UDim2.new(1, 0, 0, 1), BorderSizePixel = 0, LayoutOrder = self._tabOrder }, { BackgroundColor3 = "Stroke" })
 	end
 end
 
@@ -1058,19 +1065,14 @@ function Window:AddTab(a, icon)
 	if type(a) == "table" and a.Icon then
 		icon = a.Icon
 	end
+	local win = self
 	local tab = setmetatable({ Window = self, Title = title, _items = {}, _order = 0, Active = false }, Tab)
 	self._tabOrder = self._tabOrder + 1
 
 	local btn = self:_make("TextButton", {
-		Parent = self.TabList, Size = UDim2.new(1, 0, 0, 34), Text = "", AutoButtonColor = false, BorderSizePixel = 0,
+		Parent = self.TabHolder, Size = UDim2.new(1, 0, 0, 34), Text = "", AutoButtonColor = false, BorderSizePixel = 0,
 		BackgroundTransparency = 1, LayoutOrder = self._tabOrder,
-	}, { BackgroundColor3 = "SurfaceHover" })
-	corner(btn, 8)
-	local indicator = self:_make("Frame", {
-		Parent = btn, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.fromOffset(3, 16),
-		BorderSizePixel = 0, BackgroundTransparency = 1,
-	}, { BackgroundColor3 = "Accent" })
-	corner(indicator, 2)
+	})
 	local iconId = resolveIcon(icon)
 	local iconLabel
 	if iconId then
@@ -1086,36 +1088,61 @@ function Window:AddTab(a, icon)
 		BackgroundTransparency = 1, Text = title, Font = Library.Font, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	}, { TextColor3 = function()
-		return tab.Active and "Text" or "SubText"
+		return tab.Active and "Accent" or "SubText"
 	end })
 
+	-- page = CanvasGroup (for the fade) around a ScrollingFrame (for the slide)
+	local wrap = self:_make("CanvasGroup", {
+		Parent = self.Content, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, GroupTransparency = 1, Visible = false,
+	})
 	local page = self:_make("ScrollingFrame", {
-		Parent = self.Content, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
-		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false, ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = wrap, Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
 	}, { ScrollBarImageColor3 = "Stroke" })
 	pad(page, 12, 14, 14, 12)
-	layout(page, "V", 8)
-	tab.Page = page
+	layout(page, "V", 10)
+	tab.Page = wrap
+	tab.Scroll = page
 	tab.Content = page
 	tab.Button = btn
 
 	function tab:_SetActive(a)
 		self.Active = a
-		tween(btn, TI_FAST, { BackgroundTransparency = a and 0 or 1 })
-		tween(indicator, TI_FAST, { BackgroundTransparency = a and 0 or 1 })
-		tween(label, TI_FAST, { TextColor3 = Library.Theme[a and "Text" or "SubText"] })
+		tween(label, TI_FAST, { TextColor3 = Library.Theme[a and "Accent" or "SubText"] })
 		if iconLabel then
 			tween(iconLabel, TI_FAST, { ImageColor3 = Library.Theme[a and "Accent" or "SubText"] })
 		end
 	end
+	-- move the sliding highlight onto this tab
+	function tab:_Place(animate)
+		local tl, ind = win.TabList, win.Indicator
+		if not btn.Parent or btn.AbsoluteSize.X <= 0 then
+			return
+		end
+		local p = btn.AbsolutePosition - tl.AbsolutePosition + tl.CanvasPosition
+		local pos = UDim2.fromOffset(p.X, p.Y)
+		local size = UDim2.fromOffset(btn.AbsoluteSize.X, btn.AbsoluteSize.Y)
+		ind.Visible = true
+		if animate then
+			tween(ind, TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Position = pos, Size = size })
+		else
+			ind.Position = pos
+			ind.Size = size
+		end
+	end
+	btn:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+		if win.CurrentTab == tab then
+			tab:_Place(false)
+		end
+	end)
 	btn.MouseEnter:Connect(function()
 		if not tab.Active then
-			tween(btn, TI_FAST, { BackgroundTransparency = 0.6 })
+			tween(label, TI_FAST, { TextColor3 = Library.Theme.Text })
 		end
 	end)
 	btn.MouseLeave:Connect(function()
 		if not tab.Active then
-			tween(btn, TI_FAST, { BackgroundTransparency = 1 })
+			tween(label, TI_FAST, { TextColor3 = Library.Theme.SubText })
 		end
 	end)
 	btn.MouseButton1Click:Connect(function()
@@ -1135,6 +1162,7 @@ function Window:SelectTab(tab)
 		return
 	end
 	self:_ClosePopup()
+	local first = self.CurrentTab == nil
 	local prev = self.CurrentTab
 	if prev then
 		prev.Page.Visible = false
@@ -1142,9 +1170,12 @@ function Window:SelectTab(tab)
 	end
 	self.CurrentTab = tab
 	tab:_SetActive(true)
-	tab.Page.Position = UDim2.fromOffset(0, 12)
+	tab:_Place(not first)
+	tab.Page.GroupTransparency = 1
+	tab.Scroll.Position = UDim2.fromOffset(0, 16)
 	tab.Page.Visible = true
-	tween(tab.Page, TI_MED, { Position = UDim2.fromOffset(0, 0) })
+	tween(tab.Page, TI_MED, { GroupTransparency = 0 })
+	tween(tab.Scroll, TI_MED, { Position = UDim2.fromOffset(0, 0) })
 end
 
 function Tab:Select()
@@ -1155,14 +1186,44 @@ end
 -- Container: shared builders for Tab and Section
 --------------------------------------------------------------------------------
 
+-- A group is one bordered, rounded container; its rows are separated by 1px hairlines
+-- (the gap between rows shows the container's Stroke color).
+local function makeGroup(win, parent, order)
+	local g = win:_make("CanvasGroup", {
+		Parent = parent, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BorderSizePixel = 0, LayoutOrder = order,
+	}, { BackgroundColor3 = "Stroke" })
+	corner(g, 10)
+	win:_stroke(g)
+	layout(g, "V", 1)
+	return g
+end
+
+local function rowOrder(c)
+	c._rowOrder = (c._rowOrder or 0) + 1
+	return c._rowOrder
+end
+
+-- where the next element goes: a Section's own group, or an implicit group inside a Tab
+function Container:_Parent()
+	if self._isSection then
+		return self.Content, self._items
+	end
+	if not self._group then
+		self._group = makeGroup(self.Window, self.Content, nextOrder(self))
+		self._groupItems = {}
+		self._rowOrder = 0
+		table.insert(self._items, { frame = self._group, children = self._groupItems, hidden = false, text = "" })
+	end
+	return self._group, self._groupItems
+end
+
 local function newShell(self, horizontal)
 	local win = self.Window
+	local parent = self:_Parent()
 	local outer = win:_make("Frame", {
-		Parent = self.Content, Size = UDim2.new(1, 0, 0, 44), AutomaticSize = Enum.AutomaticSize.Y, BorderSizePixel = 0,
-		LayoutOrder = nextOrder(self),
+		Parent = parent, Size = UDim2.new(1, 0, 0, 44), AutomaticSize = Enum.AutomaticSize.Y, BorderSizePixel = 0,
+		LayoutOrder = rowOrder(self),
 	}, { BackgroundColor3 = "Surface" })
-	corner(outer, 10)
-	win:_stroke(outer)
 	local inner = win:_make("TextButton", {
 		Parent = outer, Size = UDim2.new(1, 0, 0, 44), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
 		BorderSizePixel = 0, Text = "", AutoButtonColor = false,
@@ -1234,7 +1295,9 @@ local function finish(self, el, r, opts, kind)
 		frame = r.Row, hidden = false,
 		text = string.lower(tostring(opts.Name or opts.Title or "") .. " " .. tostring(opts.Description or opts.Desc or "")),
 	}
-	table.insert(self._items, item)
+	local _, list = self:_Parent()
+	table.insert(list, item)
+	el._list = list
 	function el:SetVisible(v)
 		item.hidden = not v
 		win:_Refilter()
@@ -1255,9 +1318,9 @@ local function finish(self, el, r, opts, kind)
 		for _, c in ipairs(self._conns) do
 			c:Disconnect()
 		end
-		local idx = table.find(self.Container._items, item)
+		local idx = table.find(self._list, item)
 		if idx then
-			table.remove(self.Container._items, idx)
+			table.remove(self._list, idx)
 		end
 		if self.Flag and Library.Options[self.Flag] == self then
 			Library.Options[self.Flag] = nil
@@ -1287,30 +1350,28 @@ function Container:AddSection(a)
 	local collapsible = not (type(a) == "table" and a.Collapsible == false)
 	local collapsed = type(a) == "table" and a.Collapsed == true
 
+	self._group = nil -- a section ends the implicit group of a tab
 	local frame = win:_make("Frame", {
 		Parent = self.Content, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
 		LayoutOrder = nextOrder(self),
 	})
-	layout(frame, "V", 8)
+	layout(frame, "V", 6)
 	local header = win:_make("TextButton", {
 		Parent = frame, Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, LayoutOrder = 1,
 	})
 	win:_make("TextLabel", {
 		Parent = header, Position = UDim2.fromOffset(2, 0), Size = UDim2.new(1, -28, 1, 0), BackgroundTransparency = 1,
-		Text = string.upper(title), Font = Library.FontBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
-	}, { TextColor3 = "SubText" })
+		Text = title, Font = Library.FontBold, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left,
+	}, { TextColor3 = "Text" })
 	local arrow
 	if collapsible then
 		arrow = chevron(header, "SubText", win)
 		arrow.AnchorPoint = Vector2.new(1, 0.5)
 		arrow.Position = UDim2.new(1, -4, 0.5, 0)
 	end
-	local content = win:_make("Frame", {
-		Parent = frame, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = 2,
-	})
-	layout(content, "V", 8)
+	local content = makeGroup(win, frame, 2)
 
-	local sec = setmetatable({ Window = win, Title = title, Content = content, Frame = frame, _items = {}, _order = 0, Tab = self.Tab or self }, Section)
+	local sec = setmetatable({ Window = win, Title = title, Content = content, Frame = frame, _items = {}, _order = 0, _rowOrder = 0, _isSection = true, Tab = self.Tab or self }, Section)
 	sec.Collapsed = collapsed
 	local function apply()
 		content.Visible = not sec.Collapsed
@@ -2164,36 +2225,31 @@ end
 
 function Container:AddDivider(text)
 	local win = self.Window
+	local parent, list = self:_Parent()
+	local hasText = text and text ~= ""
 	local frame = win:_make("Frame", {
-		Parent = self.Content, Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, LayoutOrder = nextOrder(self),
-	})
-	win:_make("Frame", { Parent = frame, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.fromScale(0, 0.5), Size = UDim2.new(1, 0, 0, 1), BorderSizePixel = 0 }, { BackgroundColor3 = "Stroke" })
-	if text and text ~= "" then
+		Parent = parent, Size = UDim2.new(1, 0, 0, hasText and 26 or 8), BorderSizePixel = 0, LayoutOrder = rowOrder(self),
+	}, { BackgroundColor3 = "Background" })
+	if hasText then
 		win:_make("TextLabel", {
-			Parent = frame, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(0, 16),
-			AutomaticSize = Enum.AutomaticSize.X, BorderSizePixel = 0, Text = "  " .. tostring(text) .. "  ", Font = Library.Font, TextSize = 11,
-		}, { TextColor3 = "SubText", BackgroundColor3 = "Background" })
+			Parent = frame, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -28, 1, 0), BackgroundTransparency = 1,
+			Text = string.upper(tostring(text)), Font = Library.FontBold, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
+		}, { TextColor3 = "SubText" })
 	end
 	local item = { frame = frame, hidden = false, text = string.lower(tostring(text or "")) }
-	table.insert(self._items, item)
+	table.insert(list, item)
 	local d = { Frame = frame }
 	function d:SetVisible(v)
 		item.hidden = not v
 		win:_Refilter()
 	end
 	function d:Destroy()
-		local pos = nil
-		for i, it in ipairs(self._owner._items) do
-			if it == item then
-				pos = i
-			end
-		end
+		local pos = table.find(list, item)
 		if pos then
-			table.remove(self._owner._items, pos)
+			table.remove(list, pos)
 		end
 		frame:Destroy()
 	end
-	d._owner = self
 	return d
 end
 
