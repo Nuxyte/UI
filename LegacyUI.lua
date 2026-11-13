@@ -1,19 +1,27 @@
 --!nonstrict
 --[[
-	MalaphasUI v4.2 - dark utility-style Roblox UI library (Luau).
+	MalaphasUI v4.4 - dark utility-style Roblox UI library (Luau).
 
 	Placement : ModuleScript named "MalaphasUI" in ReplicatedStorage.
 	Usage     : local Library = require(ReplicatedStorage:WaitForChild("MalaphasUI"))
 
 	WINDOW
-	  Library:CreateWindow({Name, Size, ToggleKey, Parent, OnClose, Icon, Theme, AboveMenu, MaxVisible})  -> Window
+	  Library:CreateWindow({Name, Size, ToggleKey, Parent, OnClose, Icon, Theme, AboveMenu, MaxVisible,
+	                        Launcher, LauncherText})  -> Window
+	      Launcher (default true): closing the window (X button / Window:Close()) only HIDES it and leaves a small
+	                               button at the top of the screen that reopens it. The same button shows whenever
+	                               the window is hidden (ToggleKey / SetVisible(false)). Launcher = false restores
+	                               the old behavior: Close() destroys the window. LauncherText = button text.
 	      MaxVisible (default 5): max notifications on screen; beyond that the oldest fades out early
 	                              (also readable / writable as Window.MaxVisible)
 	      The window auto-scales down (never up) to fit small screens and re-clamps itself on-screen
 	      whenever the camera viewport changes.
 	      Size: UDim2.new(0, 600, 0, 400) (a Scale part is converted with the screen size)
-	      AboveMenu (default true): UI stays visible and clickable above the Roblox escape menu
-	                                (ScreenGui.OnTopOfCoreBlur). Same option on CreateWatermark.
+	      AboveMenu (default true): UI draws above the Roblox escape menu (ScreenGui.OnTopOfCoreBlur).
+	      Parent (default automatic): gethui() -> CoreGui -> PlayerGui, first one allowed. In executors the
+	                                first two keep the UI CLICKABLE above the Esc menu (same idea as Rayfield);
+	                                in a normal LocalScript / Studio it falls back to PlayerGui.
+	                                Same behavior on CreateWatermark.
 	      Theme = preset name ("Crimson") or a table of colors, applied at creation
 	  Window:CreateTab(name, icon?, opts?)      -> Tab
 	      opts = { categoriesOnly = true }: no implicit "Main" page; use :CreateCategory only
@@ -22,7 +30,8 @@
 	  Window:SetAboveMenu(bool)                 -- stay visible / clickable above the Roblox escape menu
 	  Window:SetMinimized(bool)                 -- collapse to the title bar ("-" button / double-click title)
 	  Window:SetVisible(bool)                   -- full hide (ToggleKey)
-	  Window:Close() / Window:Destroy()
+	  Window:Close()                            -- hide + launcher button (Launcher = false: destroys)
+	  Window:Destroy()                          -- remove the window and its launcher for good
 
 	TABS & CATEGORIES
 	  Tab:CreateSection(name, side, icon?, order?)      -- side = "Left" | "Right"; goes in an implicit "Main" page
@@ -48,6 +57,13 @@
 	      right-click the key box -> "Unbind"
 	  AddLabel(text)                            -> {SetText, SetColor(color | themeKey | nil), SetVisible, Destroy}
 	  AddDivider(text?)                         -> {Frame, SetVisible, Destroy}
+	  AddCustom(height, function(container, obj) ... end)   -- empty row you fill yourself
+	      also AddCustom({Height, Name, Build})  -> {Frame, Container, SetVisible, Destroy}
+	  AddPreview({Name, Height, Model | UserId | Character, AutoRotate, RotateSpeed, Draggable, Yaw, Pitch,
+	              FieldOfView, Padding, Rounded, Border, Background, Ambient, LightColor, LightDirection})
+	      3D preview in a ViewportFrame: shows a CLONE of a model / part / accessory / character (drag to rotate)
+	      -> {SetModel(instance), SetUserId(id), SetCharacter(player | model), SetAutoRotate(bool),
+	          SetRotation(deg), SetBackground(color | themeKey), GetModel(), SetVisible(bool), Destroy()}
 	  AddImage({Image, Height, ScaleType, Rounded, Border, Color, Callback})
 	      -> {Set, Get, SetVisible(bool), SetOpacity(0..1), Destroy}
 	  AddThemeEditor({Keys})                    -- preset dropdown + one color picker per theme color
@@ -375,6 +391,27 @@ local function addCorner(parent, radius)
 	return c
 end
 
+-- Rayfield-style parenting: protected containers first (clickable over the Esc menu), PlayerGui as the fallback
+local function mountGui(gui, parent)
+	if parent then
+		gui.Parent = parent
+		return
+	end
+	pcall(function()
+		if typeof(gethui) == "function" then
+			gui.Parent = gethui()
+		elseif syn and syn.protect_gui then
+			syn.protect_gui(gui)
+			gui.Parent = game:GetService("CoreGui")
+		else
+			gui.Parent = game:GetService("CoreGui")
+		end
+	end)
+	if gui.Parent == nil then
+		gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+	end
+end
+
 local function tween(inst, props, time, style)
 	TweenService:Create(
 		inst,
@@ -664,41 +701,7 @@ function Library:CreateWindow(config)
 		math.max(size.Y.Offset + size.Y.Scale * viewport.Y, 200)
 	)
 	self.FullSize = px
-
-	-- ============================================================
-	-- Rayfield-style parent resolution:
-	--   1. config.Parent (explicit override)
-	--   2. gethui()         (executor-protected hidden UI)
-	--   3. syn.protect_gui + CoreGui (Synapse X)
-	--   4. CoreGui:FindFirstChild("RobloxGui")
-	--   5. CoreGui
-	--   6. PlayerGui (last resort, keeps the UI visible if CoreGui is locked)
-	-- ============================================================
-	local function resolveParent()
-		if config.Parent then
-			return config.Parent
-		end
-
-		if typeof(gethui) == "function" then
-			local ok, hidden = pcall(gethui)
-			if ok and hidden then
-				return hidden
-			end
-		end
-
-		-- syn.protect_gui must run before the gui is parented, so it is
-		-- handled separately below (it does not return a parent).
-		local robloxGui = CoreGui:FindFirstChild("RobloxGui")
-		if robloxGui then
-			return robloxGui
-		end
-
-		if CoreGui then
-			return CoreGui
-		end
-
-		return Players.LocalPlayer:WaitForChild("PlayerGui")
-	end
+	local parent = config.Parent -- nil = automatic (see mountGui)
 
 	local gui = create("ScreenGui", {
 		Name = RandomString(27),
@@ -708,31 +711,9 @@ function Library:CreateWindow(config)
 		DisplayOrder = 2147483647, -- max int32 (DisplayOrder is an int property)
 		-- Stays visible AND clickable above the Roblox escape menu (core blur layer)
 		OnTopOfCoreBlur = config.AboveMenu ~= false,
-	}, nil) -- parent assigned below
+	}, parent)
 	self.Gui = gui
-
-	-- Protects the gui from coregui detection (Synapse X style executors).
-	-- Must be called before parenting.
-	if not config.Parent and typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
-		pcall(syn.protect_gui, gui)
-	end
-
-	local parent = resolveParent()
-	gui.Parent = parent
-
-	-- Disable old instances with the same name (Rayfield behaviour).
-	-- Wrapped in pcall because some executors block reading CoreGui children.
-	local scanRoot = parent
-	if scanRoot then
-		pcall(function()
-			for _, interface in ipairs(scanRoot:GetChildren()) do
-				if interface ~= gui and interface.Name == gui.Name then
-					interface.Enabled = false
-					interface.Name = gui.Name .. "-Old"
-				end
-			end
-		end)
-	end
+	mountGui(gui, parent)
 
 	-- CanvasGroup = the whole window can fade in/out
 	local main = create("CanvasGroup", {
@@ -910,6 +891,35 @@ function Library:CreateWindow(config)
 		self:_CloseDropdown()
 	end)
 
+	-- Launcher: small button at the top of the screen, shown while the window is hidden
+	if config.Launcher ~= false then
+		local text = tostring(config.LauncherText or self.Name)
+		local w = TextService:GetTextSize("+  " .. text, T.TextSize, T.Font, Vector2.new(1000, 100)).X + 22
+		local launcher = create("TextButton", {
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0, -34),
+			Size = UDim2.fromOffset(w, 22),
+			BackgroundTransparency = 0,
+			BackgroundColor3 = "PanelHeader",
+			Text = "+  " .. text,
+			TextColor3 = "SubText",
+			Visible = false,
+			ZIndex = 60,
+		}, gui)
+		addStroke(launcher, "Border")
+		addCorner(launcher, 4)
+		launcher.MouseEnter:Connect(function()
+			tween(launcher, { TextColor3 = T.Accent })
+		end)
+		launcher.MouseLeave:Connect(function()
+			tween(launcher, { TextColor3 = T.SubText })
+		end)
+		launcher.MouseButton1Click:Connect(function()
+			self:SetVisible(true)
+		end)
+		self.Launcher = launcher
+	end
+
 	table.insert(self.Connections, makeDraggable(header, main))
 
 	-- Show / hide key
@@ -963,6 +973,7 @@ function Window:SetVisible(visible)
 		return
 	end
 	self.Visible = visible
+	self:_ShowLauncher(not visible)
 	if visible then
 		self:_BeginTween(0.22)
 		self.Main.Visible = true
@@ -976,6 +987,25 @@ function Window:SetVisible(visible)
 		task.delay(0.17, function()
 			if not self.Visible and self.Main and self.Main.Parent then
 				self.Main.Visible = false
+			end
+		end)
+	end
+end
+
+-- Slide the launcher button in (window hidden) / out (window visible)
+function Window:_ShowLauncher(show)
+	local l = self.Launcher
+	if not l then
+		return
+	end
+	if show then
+		l.Visible = true
+		tween(l, { Position = UDim2.new(0.5, 0, 0, 8) }, 0.3, Enum.EasingStyle.Quint)
+	else
+		tween(l, { Position = UDim2.new(0.5, 0, 0, -34) }, 0.18)
+		task.delay(0.2, function()
+			if l.Parent and self.Visible then
+				l.Visible = false
 			end
 		end)
 	end
@@ -1009,6 +1039,16 @@ function Window:SetAboveMenu(enabled)
 end
 
 function Window:Close()
+	if self.Launcher then
+		-- stay alive: the launcher button at the top of the screen reopens the window
+		if self.Visible then
+			if self.OnClose then
+				task.spawn(self.OnClose)
+			end
+			self:SetVisible(false)
+		end
+		return
+	end
 	if self._closing then
 		return
 	end
@@ -2050,6 +2090,262 @@ function Groupbox:AddImage(o)
 end
 
 ----------------------------------------------------------------------
+-- Custom row + 3D preview
+----------------------------------------------------------------------
+
+-- Empty row of a given height that you fill yourself:
+--   gb:AddCustom(80, function(container, obj) ... end)   or   gb:AddCustom({Height = 80, Name = "x", Build = fn})
+function Groupbox:AddCustom(a, b)
+	local height, builder, name
+	if type(a) == "table" then
+		height, builder, name = a.Height or 60, a.Build or a.Builder or a.Callback, a.Name
+	else
+		height, builder = a or 60, b
+	end
+	local row = self:_Row(height)
+	local container = create("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+	}, row)
+	local obj = { Frame = row, Container = container }
+	local entry = self:_Register(name or "custom", row)
+	if type(builder) == "function" then
+		local ok, err = pcall(builder, container, obj)
+		if not ok then
+			warn("[MalaphasUI] AddCustom builder error: " .. tostring(err))
+		end
+	end
+	function obj:SetVisible(visible)
+		setEntryVisible(entry, visible)
+	end
+	attachDestroy(self, obj, entry)
+	return obj
+end
+
+-- true when the object and all its GuiObject ancestors are visible
+local function isShown(inst)
+	local p = inst
+	while p and p:IsA("GuiObject") do
+		if not p.Visible then
+			return false
+		end
+		p = p.Parent
+	end
+	return true
+end
+
+-- ViewportFrame showing a CLONE of a model / part / accessory / character. Drag to rotate.
+function Groupbox:AddPreview(o)
+	o = o or {}
+	local window = self.Window
+	local height = o.Height or 140
+	local row = self:_Row(height)
+	local fov = o.FieldOfView or 40
+	local pitch = math.rad(o.Pitch or 8)
+	local padding = o.Padding or 1.1
+
+	local vf = create("ViewportFrame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = o.Background or "Element",
+		Ambient = o.Ambient or Color3.fromRGB(170, 170, 170),
+		LightColor = o.LightColor or Color3.fromRGB(255, 255, 255),
+		-- the front of a Roblox model faces -Z and the camera looks from -Z, so light travels toward +Z
+		LightDirection = o.LightDirection or Vector3.new(-0.3, -0.6, 0.8),
+	}, row)
+	if o.Border ~= false then
+		addStroke(vf, "Border")
+	end
+	if o.Rounded then
+		addCorner(vf, o.Radius or 6)
+	end
+	local camera = Instance.new("Camera")
+	camera.FieldOfView = fov
+	camera.Parent = vf
+	vf.CurrentCamera = camera
+
+	if o.Name and o.Name ~= "" and o.Caption ~= false then
+		create("TextLabel", {
+			Position = UDim2.fromOffset(6, 4),
+			Size = UDim2.new(1, -12, 0, 12),
+			Text = o.Name,
+			TextSize = 10,
+			TextColor3 = "SubText",
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 2,
+		}, vf)
+	end
+
+	local obj = { Name = o.Name or "", Model = nil }
+	local model, center, pivot0, radius = nil, Vector3.zero, CFrame.new(), 1
+	local yaw = math.rad(o.Yaw or 0)
+	local auto = o.AutoRotate ~= false
+	local speed = math.rad(o.RotateSpeed or 28)
+	local dragging, resumeAt, token = false, 0, 0
+
+	local function refit()
+		if not model then
+			return
+		end
+		local size = vf.AbsoluteSize
+		local aspect = size.X / math.max(size.Y, 1)
+		local vfov = math.rad(fov)
+		local hfov = 2 * math.atan(math.tan(vfov / 2) * aspect)
+		local dist = radius / math.sin(math.min(vfov, hfov) / 2) * padding
+		local dir = Vector3.new(0, math.sin(pitch), -math.cos(pitch))
+		camera.CFrame = CFrame.lookAt(center + dir * dist, center)
+	end
+	local function apply()
+		if model then
+			model:PivotTo(CFrame.new(center) * CFrame.Angles(0, yaw, 0) * CFrame.new(-center) * pivot0)
+		end
+	end
+	vf:GetPropertyChangedSignal("AbsoluteSize"):Connect(refit)
+
+	function obj:SetModel(inst, noClone)
+		token += 1
+		if model then
+			model:Destroy()
+			model = nil
+		end
+		self.Model = nil
+		if typeof(inst) ~= "Instance" then
+			return
+		end
+		local clone = noClone and inst or inst:Clone()
+		if not clone then
+			warn("[MalaphasUI] AddPreview: this instance cannot be cloned (Archivable = false)")
+			return
+		end
+		for _, d in ipairs(clone:GetDescendants()) do
+			if d:IsA("LuaSourceContainer") then
+				d:Destroy()
+			end
+		end
+		if not clone:IsA("PVInstance") then -- accessory / tool: wrap it so it can be measured and moved
+			local holder = Instance.new("Model")
+			clone.Parent = holder
+			clone = holder
+		end
+		clone.Parent = vf
+		local cf, size
+		if clone:IsA("Model") then
+			cf, size = clone:GetBoundingBox()
+		else
+			cf, size = clone.CFrame, clone.Size
+		end
+		model = clone
+		center = cf.Position
+		pivot0 = clone:GetPivot()
+		radius = math.max(size.Magnitude / 2, 0.5)
+		self.Model = clone
+		refit()
+		apply()
+	end
+
+	function obj:SetUserId(userId)
+		token += 1
+		local mine = token
+		task.spawn(function()
+			local ok, m = pcall(function()
+				return Players:CreateHumanoidModelFromUserId(userId)
+			end)
+			if mine ~= token or obj._destroyed then
+				if ok and m then
+					m:Destroy()
+				end
+				return
+			end
+			if ok and m then
+				obj:SetModel(m, true)
+			else
+				warn("[MalaphasUI] AddPreview: could not load the avatar of " .. tostring(userId))
+			end
+		end)
+	end
+
+	function obj:SetCharacter(who)
+		local char = who
+		if typeof(who) == "Instance" and who:IsA("Player") then
+			char = who.Character
+		end
+		self:SetModel(char)
+	end
+
+	function obj:GetModel()
+		return model
+	end
+	function obj:SetAutoRotate(v)
+		auto = not not v
+	end
+	function obj:SetRotation(deg)
+		yaw = math.rad(deg or 0)
+		apply()
+	end
+	function obj:SetBackground(c)
+		if typeof(c) == "Color3" then
+			vf.BackgroundColor3 = c
+		elseif type(c) == "string" and T[c] then
+			vf.BackgroundColor3 = T[c]
+		end
+	end
+
+	-- spin + drag to rotate
+	local conns = {}
+	table.insert(conns, window:_Connect(RunService.RenderStepped, function(dt)
+		if model and auto and not dragging and os.clock() >= resumeAt and isShown(vf) then
+			yaw += dt * speed
+			apply()
+		end
+	end))
+	if o.Draggable ~= false then
+		local lastX = 0
+		local hit = create("TextButton", { Size = UDim2.fromScale(1, 1), ZIndex = 3 }, vf)
+		hit.InputBegan:Connect(function(input)
+			if isPointer(input) then
+				dragging, lastX = true, input.Position.X
+			end
+		end)
+		table.insert(conns, window:_Connect(UserInputService.InputChanged, function(input)
+			if dragging and isMove(input) then
+				yaw += (input.Position.X - lastX) * 0.012
+				lastX = input.Position.X
+				apply()
+			end
+		end))
+		table.insert(conns, window:_Connect(UserInputService.InputEnded, function(input)
+			if dragging and isPointer(input) then
+				dragging = false
+				resumeAt = os.clock() + 1.2 -- let the user look before the spin resumes
+			end
+		end))
+	end
+
+	if o.Model then
+		obj:SetModel(o.Model)
+	elseif o.UserId then
+		obj:SetUserId(o.UserId)
+	elseif o.Character then
+		obj:SetCharacter(o.Character == true and Players.LocalPlayer or o.Character)
+	end
+
+	local entry = self:_Register(o.Name or "preview", row)
+	function obj:SetVisible(visible)
+		setEntryVisible(entry, visible)
+	end
+	attachDestroy(self, obj, entry, function()
+		token += 1
+		for _, c in ipairs(conns) do
+			c:Disconnect()
+		end
+		if model then
+			model:Destroy()
+			model = nil
+		end
+	end)
+	return obj
+end
+
+----------------------------------------------------------------------
 -- Toggle
 ----------------------------------------------------------------------
 
@@ -2065,32 +2361,38 @@ function Groupbox:AddToggle(o)
 		return toggle.Value and T.Text or T.SubText
 	end
 
+	-- pill switch: rounded track + sliding knob (v4.3)
 	local box = create("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 0, 0.5, 0),
-		Size = UDim2.fromOffset(12, 12),
-		BackgroundColor3 = "Element",
+		Size = UDim2.fromOffset(26, 14),
+		BackgroundColor3 = function()
+			return toggle.Value and T.Accent or T.Track
+		end,
 	}, row)
+	addCorner(box, 7)
 	local boxStroke = addStroke(box, function()
 		return toggle.Value and T.Accent or T.Border
 	end)
-	local mark = create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(6, 6),
-		BackgroundColor3 = "Accent",
-		BackgroundTransparency = 1,
+	local mark = create("Frame", { -- the knob
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 2, 0.5, 0),
+		Size = UDim2.fromOffset(10, 10),
+		BackgroundColor3 = function()
+			return toggle.Value and T.Background or T.SubText
+		end,
 	}, box)
+	addCorner(mark, 5)
 
-	local labelX = 20
+	local labelX = 34
 	local icon, iconTinted
 	if o.Icon then
 		icon, iconTinted = makeIcon(row, o.Icon, 14, labelColor, {
 			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, 20, 0.5, 0),
+			Position = UDim2.new(0, 34, 0.5, 0),
 		})
 		if icon then
-			labelX = 40
+			labelX = 54
 		end
 	end
 	local label = create("TextLabel", {
@@ -2106,7 +2408,11 @@ function Groupbox:AddToggle(o)
 		value = not not value
 		local changed = value ~= self.Value
 		self.Value = value
-		tween(mark, { BackgroundTransparency = value and 0 or 1 })
+		tween(box, { BackgroundColor3 = value and T.Accent or T.Track }, 0.15)
+		tween(mark, {
+			Position = UDim2.new(0, value and 14 or 2, 0.5, 0),
+			BackgroundColor3 = value and T.Background or T.SubText,
+		}, 0.15, Enum.EasingStyle.Quint)
 		tween(boxStroke, { Color = value and T.Accent or T.Border })
 		tween(label, { TextColor3 = labelColor() })
 		if icon and iconTinted then
@@ -2194,14 +2500,24 @@ function Groupbox:AddSlider(o)
 		Size = UDim2.new(1, 0, 0, 12),
 	}, row)
 	local track = create("Frame", {
-		Position = UDim2.new(0, 0, 0.5, -2),
-		Size = UDim2.new(1, 0, 0, 4),
+		Position = UDim2.new(0, 0, 0.5, -3),
+		Size = UDim2.new(1, 0, 0, 6),
 		BackgroundColor3 = "Track",
 	}, hit)
+	addCorner(track, 3)
 	local fill = create("Frame", {
 		Size = UDim2.fromScale(0, 1),
 		BackgroundColor3 = "Accent",
 	}, track)
+	addCorner(fill, 3)
+	local knob = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0, 0.5),
+		Size = UDim2.fromOffset(12, 12),
+		BackgroundColor3 = "Text",
+	}, track)
+	addCorner(knob, 6)
+	addStroke(knob, "Accent", 2)
 
 	local slider = { Name = name, Value = min, Kind = "number" }
 
@@ -2219,7 +2535,8 @@ function Groupbox:AddSlider(o)
 		local changed = value ~= self.Value
 		self.Value = value
 		local alpha = (max > min) and (value - min) / (max - min) or 0
-		fill.Size = UDim2.new(alpha, 0, 1, 0)
+		tween(fill, { Size = UDim2.new(alpha, 0, 1, 0) }, 0.08)
+		tween(knob, { Position = UDim2.new(alpha, 0, 0.5, 0) }, 0.08)
 		valueLabel.Text = string.format("%." .. decimals .. "f", value) .. suffix
 		if o.Flag then
 			Library.Flags[o.Flag] = value
@@ -2384,6 +2701,7 @@ function Groupbox:AddDropdown(o)
 		BackgroundTransparency = 0,
 		BackgroundColor3 = "Element",
 	}, row)
+	addCorner(box, 4)
 	local boxStroke = addStroke(box, "Border")
 	local valueLabel = create("TextLabel", {
 		Position = UDim2.fromOffset(6, 0),
@@ -2524,6 +2842,7 @@ function Groupbox:AddButton(o)
 		Text = name,
 		LayoutOrder = self._order,
 	}, self.Content)
+	addCorner(button, 4)
 	local stroke = addStroke(button, "Border")
 
 	local enabled = true
@@ -2709,6 +3028,7 @@ function Groupbox:AddTextbox(o)
 		TextSize = 11,
 		ClipsDescendants = true,
 	}, row)
+	addCorner(box, 4)
 	local stroke = addStroke(box, "Border")
 	addPadding(box, 6, multiLine and 3 or 0, 6, multiLine and 3 or 0)
 
@@ -2804,6 +3124,7 @@ function Groupbox:AddKeybind(o)
 		BackgroundColor3 = "Element",
 		TextSize = 10,
 	}, row)
+	addCorner(box, 4)
 	local stroke = addStroke(box, function()
 		return binding and T.Accent or T.Border
 	end)
@@ -2941,7 +3262,8 @@ function Library:CreateWatermark(config)
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		DisplayOrder = 999,
 		OnTopOfCoreBlur = config.AboveMenu ~= false,
-	}, config.Parent or Players.LocalPlayer:WaitForChild("PlayerGui"))
+	}, nil)
+	mountGui(gui, config.Parent)
 
 	local frame = create("Frame", {
 		Position = config.Position or UDim2.fromOffset(12, 12),
